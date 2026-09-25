@@ -97,10 +97,16 @@
   .pick-item .alerta-btn { margin-top: 8px; font-size: 11px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-family: inherit; }
   .alerta-tag { font-size: 11px; color: var(--red); margin-top: 6px; }
 
-  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
-  .kcol { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; text-align: center; }
-  .kcol .n { font-size: 22px; font-weight: 800; font-family: 'IBM Plex Mono', monospace; }
-  .kcol .l { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .kcol { border: 1px solid var(--line); border-radius: 12px; padding: 16px 8px 12px; text-align: center; position: relative; overflow: hidden; background: var(--surface); transition: transform 0.15s; }
+  .kcol::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+  .kcol .ic { font-size: 20px; line-height: 1; margin-bottom: 6px; }
+  .kcol .n { font-size: 26px; font-weight: 800; font-family: 'IBM Plex Mono', monospace; }
+  .kcol .l { font-size: 10px; color: var(--text-dim); margin-top: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .kcol.wait { background: #241d10; } .kcol.wait::before { background: var(--accent); } .kcol.wait .n { color: var(--accent); }
+  .kcol.sep { background: #142331; } .kcol.sep::before { background: var(--blue); } .kcol.sep .n { color: var(--blue); }
+  .kcol.emb { background: #142a1e; } .kcol.emb::before { background: var(--green); } .kcol.emb .n { color: var(--green); }
+  .kcol.exp { background: #1c2024; } .kcol.exp::before { background: var(--text-dim); } .kcol.exp .n { color: var(--text-dim); }
   @media (max-width: 420px) { .kanban { grid-template-columns: repeat(2, 1fr); } }
 
   .toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line); color: var(--text); padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
@@ -305,10 +311,10 @@
 
     <div class="view" id="view-painel">
       <div class="kanban">
-        <div class="kcol"><div class="n mono" id="kWait">0</div><div class="l">A separar</div></div>
-        <div class="kcol"><div class="n mono" id="kSep">0</div><div class="l">Separado</div></div>
-        <div class="kcol"><div class="n mono" id="kEmb">0</div><div class="l">Embalado</div></div>
-        <div class="kcol"><div class="n mono" id="kExp">0</div><div class="l">Expedido</div></div>
+        <div class="kcol wait"><div class="ic">🕒</div><div class="n mono" id="kWait">0</div><div class="l">A separar</div></div>
+        <div class="kcol sep"><div class="ic">📦</div><div class="n mono" id="kSep">0</div><div class="l">Separado</div></div>
+        <div class="kcol emb"><div class="ic">🏷️</div><div class="n mono" id="kEmb">0</div><div class="l">Embalado</div></div>
+        <div class="kcol exp"><div class="ic">🚚</div><div class="n mono" id="kExp">0</div><div class="l">Expedido</div></div>
       </div>
       <div class="card" id="alertasCard" style="display:none">
         <h2>Alertas de estoque</h2>
