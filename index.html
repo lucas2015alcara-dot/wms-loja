@@ -226,6 +226,53 @@
       </div>
     </div>
 
+    <div class="view" id="view-inventario">
+      <div class="card">
+        <h2>Contagem de inventário</h2>
+        <label>Endereço a contar</label>
+        <select id="invEndereco" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px">
+          <option value="">— escolha um endereço —</option>
+        </select>
+        <div id="invLista" style="margin-top:12px"></div>
+        <div class="row" style="margin-top:6px">
+          <input type="text" id="invNovoSku" placeholder="SKU não listado (opcional)">
+          <button class="btn ghost" id="invAdicionarSku" style="max-width:120px">+ adicionar</button>
+        </div>
+        <button class="btn primary" id="invSalvar" style="width:100%; margin-top:14px; display:none">Salvar contagem</button>
+      </div>
+    </div>
+
+    <div class="view" id="view-relatorios">
+      <div class="card">
+        <h2>Período</h2>
+        <div class="row">
+          <div><label>De</label><input type="date" id="repDe"></div>
+          <div><label>Até</label><input type="date" id="repAte"></div>
+        </div>
+        <button class="btn primary" id="repAplicar" style="width:100%; margin-top:10px">Aplicar período</button>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center; margin-bottom:6px"><h2 style="margin:0; flex:1">Pedidos por status</h2><button class="btn ghost small" id="repExpPedidos" style="max-width:110px">exportar</button></div>
+        <div id="repPedidos"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center; margin-bottom:6px"><h2 style="margin:0; flex:1">Produtividade da equipe</h2><button class="btn ghost small" id="repExpProdutividade" style="max-width:110px">exportar</button></div>
+        <div id="repProdutividade"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center; margin-bottom:6px"><h2 style="margin:0; flex:1">Estoque atual por endereço</h2><button class="btn ghost small" id="repExpEstoque" style="max-width:110px">exportar</button></div>
+        <div id="repEstoque"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center; margin-bottom:6px"><h2 style="margin:0; flex:1">Histórico de contagens de inventário</h2><button class="btn ghost small" id="repExpContagens" style="max-width:110px">exportar</button></div>
+        <div id="repContagens"></div>
+      </div>
+    </div>
+
     <div class="view" id="view-painel">
       <div class="kanban">
         <div class="kcol"><div class="n mono" id="kWait">0</div><div class="l">A separar</div></div>
@@ -369,7 +416,7 @@
 
   // ---------------- NAV ----------------
   var TABS = {
-    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["painel", "Painel"]],
+    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"]],
     separador: [["separacao", "Separar"], ["painel", "Painel"]],
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
     expedicao: [["expedicao", "Expedir"], ["painel", "Painel"]]
@@ -398,6 +445,8 @@
     if (name === "embalagem") carregarFilaEmbalagem();
     if (name === "expedicao") carregarFilaExpedicao();
     if (name === "enderecos") carregarEnderecos();
+    if (name === "inventario") carregarInventario();
+    if (name === "relatorios") carregarRelatorios();
     if (name === "painel") carregarPainel();
     carregarContadores();
   }
@@ -911,6 +960,252 @@
         el.appendChild(row);
       });
     });
+  }
+
+  // ---------------- INVENTÁRIO ----------------
+  var invWired = false;
+  var invItensAtuais = []; // {produto_id, sku, nome, sistema}
+
+  function carregarInventario() {
+    if (!invWired) {
+      invWired = true;
+      document.getElementById("invEndereco").addEventListener("change", carregarItensInventario);
+      document.getElementById("invAdicionarSku").addEventListener("click", adicionarSkuInventario);
+      document.getElementById("invSalvar").addEventListener("click", salvarInventario);
+    }
+    sb.from("enderecos").select("id,codigo").eq("ativo", true).order("codigo").then(function (res) {
+      var sel = document.getElementById("invEndereco");
+      var atual = sel.value;
+      sel.innerHTML = '<option value="">— escolha um endereço —</option>';
+      (res.data || []).forEach(function (e) {
+        sel.innerHTML += '<option value="' + e.id + '">' + escapeHtml(e.codigo) + '</option>';
+      });
+      if (atual) sel.value = atual;
+    });
+  }
+
+  function carregarItensInventario() {
+    var endId = document.getElementById("invEndereco").value;
+    var lista = document.getElementById("invLista");
+    invItensAtuais = [];
+    if (!endId) { lista.innerHTML = ""; document.getElementById("invSalvar").style.display = "none"; return; }
+    lista.innerHTML = '<div class="empty">Carregando...</div>';
+    sb.from("estoque_enderecos").select("quantidade,produtos(id,sku,nome)").eq("endereco_id", endId).gt("quantidade", 0).then(function (res) {
+      invItensAtuais = (res.data || []).map(function (r) {
+        return { produto_id: r.produtos.id, sku: r.produtos.sku, nome: r.produtos.nome, sistema: r.quantidade };
+      });
+      renderInventarioLista();
+    });
+  }
+
+  function renderInventarioLista() {
+    var lista = document.getElementById("invLista");
+    var btnSalvar = document.getElementById("invSalvar");
+    if (invItensAtuais.length === 0) {
+      lista.innerHTML = '<div class="empty">Nenhum SKU cadastrado nesse endereço ainda. Use o campo abaixo pra adicionar um.</div>';
+    } else {
+      lista.innerHTML = "";
+      invItensAtuais.forEach(function (it, idx) {
+        var row = document.createElement("div");
+        row.className = "pick-item";
+        row.innerHTML =
+          '<div class="top"><div><div class="name">' + escapeHtml(it.nome) + '</div><div class="sku mono">' + escapeHtml(it.sku) + ' · sistema: ' + it.sistema + '</div></div>' +
+          '<input type="number" min="0" value="' + it.sistema + '" data-inv-idx="' + idx + '" class="mono" style="width:80px; text-align:center"></div>';
+        lista.appendChild(row);
+      });
+    }
+    btnSalvar.style.display = invItensAtuais.length ? "" : "none";
+  }
+
+  function adicionarSkuInventario() {
+    var input = document.getElementById("invNovoSku");
+    var sku = input.value.trim();
+    if (!sku) { toast("Informe o SKU", "err"); return; }
+    if (invItensAtuais.some(function (it) { return normalizarCodigo(it.sku) === normalizarCodigo(sku); })) {
+      toast("Esse SKU já está na lista", "err"); return;
+    }
+    sb.from("produtos").select("id,sku,nome").eq("sku", sku).maybeSingle().then(function (res) {
+      if (res.error || !res.data) { toast("SKU não encontrado nos produtos cadastrados", "err"); return; }
+      invItensAtuais.push({ produto_id: res.data.id, sku: res.data.sku, nome: res.data.nome, sistema: 0 });
+      input.value = "";
+      renderInventarioLista();
+    });
+  }
+
+  function salvarInventario() {
+    var endId = document.getElementById("invEndereco").value;
+    if (!endId) return;
+    var lista = document.getElementById("invLista");
+    var inputs = lista.querySelectorAll("[data-inv-idx]");
+    var chamadas = [];
+    inputs.forEach(function (inp) {
+      var idx = parseInt(inp.dataset.invIdx, 10);
+      var it = invItensAtuais[idx];
+      var contado = parseInt(inp.value, 10);
+      if (isNaN(contado) || contado < 0) return;
+      chamadas.push(sb.rpc("registrar_contagem_inventario", { p_endereco_id: endId, p_produto_id: it.produto_id, p_qtd_contada: contado }));
+    });
+    if (chamadas.length === 0) { toast("Nada pra salvar", "err"); return; }
+    var btn = document.getElementById("invSalvar");
+    btn.disabled = true;
+    Promise.all(chamadas).then(function (resultados) {
+      var erro = resultados.find(function (r) { return r && r.error; });
+      if (erro) { toast("Erro ao salvar: " + erro.error.message, "err"); return; }
+      toast("Contagem salva ✓", "ok");
+      carregarItensInventario();
+    }).finally(function () { btn.disabled = false; });
+  }
+
+  // ---------------- RELATÓRIOS ----------------
+  var repWired = false;
+  var repDataPedidos = null, repDataProdutividade = null, repDataEstoque = null, repDataContagens = null;
+
+  function carregarRelatorios() {
+    if (!repWired) {
+      repWired = true;
+      var hoje = new Date();
+      var trintaDiasAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
+      document.getElementById("repDe").value = trintaDiasAtras.toISOString().slice(0, 10);
+      document.getElementById("repAte").value = hoje.toISOString().slice(0, 10);
+      document.getElementById("repAplicar").addEventListener("click", rodarRelatorios);
+      document.getElementById("repExpPedidos").addEventListener("click", function () { exportarCSV("pedidos_por_status.csv", repDataPedidos); });
+      document.getElementById("repExpProdutividade").addEventListener("click", function () { exportarCSV("produtividade_equipe.csv", repDataProdutividade); });
+      document.getElementById("repExpEstoque").addEventListener("click", function () { exportarCSV("estoque_por_endereco.csv", repDataEstoque); });
+      document.getElementById("repExpContagens").addEventListener("click", function () { exportarCSV("historico_contagens.csv", repDataContagens); });
+    }
+    rodarRelatorios();
+  }
+
+  function periodoISO() {
+    var de = document.getElementById("repDe").value;
+    var ate = document.getElementById("repAte").value;
+    return {
+      de: de ? de + "T00:00:00" : "1970-01-01T00:00:00",
+      ate: ate ? ate + "T23:59:59" : "2999-12-31T23:59:59"
+    };
+  }
+
+  function rodarRelatorios() {
+    relatorioPedidos();
+    relatorioProdutividade();
+    relatorioEstoque();
+    relatorioContagens();
+  }
+
+  function relatorioPedidos() {
+    var p = periodoISO();
+    var el = document.getElementById("repPedidos");
+    el.innerHTML = '<div class="empty">Carregando...</div>';
+    sb.from("pedidos").select("status").gte("criado_em", p.de).lte("criado_em", p.ate).then(function (res) {
+      var lista = res.data || [];
+      var kv = { a_separar: 0, separado: 0, embalado: 0, expedido: 0 };
+      lista.forEach(function (o) { kv[o.status] = (kv[o.status] || 0) + 1; });
+      repDataPedidos = { headers: ["status", "quantidade"], rows: Object.keys(kv).map(function (k) { return [statusLabel(k), kv[k]]; }) };
+      if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum pedido nesse período.</div>'; return; }
+      el.innerHTML =
+        '<div class="row" style="flex-wrap:wrap; gap:6px">' +
+        Object.keys(kv).map(function (k) { return '<div class="counter" style="min-width:90px"><div class="n mono">' + kv[k] + '</div><div class="l">' + statusLabel(k) + '</div></div>'; }).join("") +
+        '</div><div class="scan-hint" style="margin-top:8px">Total no período: ' + lista.length + ' pedido(s)</div>';
+    });
+  }
+
+  function relatorioProdutividade() {
+    var p = periodoISO();
+    var el = document.getElementById("repProdutividade");
+    el.innerHTML = '<div class="empty">Carregando...</div>';
+    sb.from("eventos_tarefa").select("tipo,iniciado_em,finalizado_em,perfis(nome)").not("finalizado_em", "is", null)
+      .gte("finalizado_em", p.de).lte("finalizado_em", p.ate).then(function (res) {
+        var lista = res.data || [];
+        if (lista.length === 0) {
+          repDataProdutividade = { headers: ["usuario", "tipo", "itens_concluidos", "tempo_medio_seg"], rows: [] };
+          el.innerHTML = '<div class="empty">Nenhuma tarefa concluída nesse período.</div>';
+          return;
+        }
+        var agrup = {}; // chave "nome|tipo" -> {count, somaSeg}
+        lista.forEach(function (ev) {
+          var nome = (ev.perfis && ev.perfis.nome) || "—";
+          var chave = nome + "|" + ev.tipo;
+          if (!agrup[chave]) agrup[chave] = { nome: nome, tipo: ev.tipo, count: 0, somaSeg: 0 };
+          agrup[chave].count++;
+          agrup[chave].somaSeg += (new Date(ev.finalizado_em) - new Date(ev.iniciado_em)) / 1000;
+        });
+        var linhas = Object.keys(agrup).map(function (k) { return agrup[k]; });
+        linhas.sort(function (a, b) { return b.count - a.count; });
+        repDataProdutividade = {
+          headers: ["usuario", "tipo", "itens_concluidos", "tempo_medio_seg"],
+          rows: linhas.map(function (l) { return [l.nome, l.tipo === "separacao" ? "Separação" : "Embalagem", l.count, Math.round(l.somaSeg / l.count)]; })
+        };
+        el.innerHTML = "";
+        linhas.forEach(function (l) {
+          var row = document.createElement("div");
+          row.className = "order-row";
+          row.style.cursor = "default";
+          var tempoMedio = Math.round(l.somaSeg / l.count);
+          row.innerHTML = '<div><div class="oid">' + escapeHtml(l.nome) + '</div><div class="meta">' + (l.tipo === "separacao" ? "Separação" : "Embalagem") + ' · tempo médio ' + tempoMedio + 's</div></div><span class="badge ' + (l.tipo === "separacao" ? "sep" : "emb") + '">' + l.count + ' item(ns)</span>';
+          el.appendChild(row);
+        });
+      });
+  }
+
+  function relatorioEstoque() {
+    var el = document.getElementById("repEstoque");
+    el.innerHTML = '<div class="empty">Carregando...</div>';
+    sb.from("estoque_enderecos").select("quantidade,produtos(sku,nome),enderecos(codigo)").gt("quantidade", 0).order("atualizado_em", { ascending: false }).then(function (res) {
+      var lista = res.data || [];
+      repDataEstoque = {
+        headers: ["endereco", "sku", "produto", "quantidade"],
+        rows: lista.map(function (r) { return [r.enderecos.codigo, r.produtos.sku, r.produtos.nome, r.quantidade]; })
+      };
+      if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum estoque endereçado.</div>'; return; }
+      el.innerHTML = "";
+      lista.forEach(function (r) {
+        var row = document.createElement("div");
+        row.className = "order-row";
+        row.style.cursor = "default";
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + ' · ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
+        el.appendChild(row);
+      });
+    });
+  }
+
+  function relatorioContagens() {
+    var p = periodoISO();
+    var el = document.getElementById("repContagens");
+    el.innerHTML = '<div class="empty">Carregando...</div>';
+    sb.from("inventario_contagens").select("qtd_sistema,qtd_contada,diferenca,criado_em,produtos(sku,nome),enderecos(codigo),perfis(nome)")
+      .gte("criado_em", p.de).lte("criado_em", p.ate).order("criado_em", { ascending: false }).then(function (res) {
+        var lista = res.data || [];
+        repDataContagens = {
+          headers: ["data", "endereco", "sku", "produto", "sistema", "contado", "diferenca", "usuario"],
+          rows: lista.map(function (r) {
+            return [new Date(r.criado_em).toLocaleString("pt-BR"), r.enderecos.codigo, r.produtos.sku, r.produtos.nome, r.qtd_sistema, r.qtd_contada, r.diferenca, (r.perfis && r.perfis.nome) || "—"];
+          })
+        };
+        if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhuma contagem registrada nesse período.</div>'; return; }
+        el.innerHTML = "";
+        lista.forEach(function (r) {
+          var row = document.createElement("div");
+          row.className = "order-row";
+          row.style.cursor = "default";
+          var difTxt = r.diferenca === 0 ? "sem diferença" : (r.diferenca > 0 ? "+" + r.diferenca : r.diferenca);
+          row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + ' · ' + escapeHtml(r.enderecos.codigo) + ' · ' + ((r.perfis && r.perfis.nome) || "—") + '</div></div><span class="badge ' + (r.diferenca === 0 ? "exp" : "wait") + '">' + difTxt + '</span>';
+          el.appendChild(row);
+        });
+      });
+  }
+
+  function exportarCSV(nomeArquivo, dados) {
+    if (!dados || dados.rows.length === 0) { toast("Nada pra exportar nesse período", "err"); return; }
+    var linhas = [dados.headers.join(";")].concat(dados.rows.map(function (r) {
+      return r.map(function (v) { return ('"' + String(v).replace(/"/g, '""') + '"'); }).join(";");
+    }));
+    var csv = "﻿" + linhas.join("\r\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = nomeArquivo;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // ---------------- PAINEL ----------------
