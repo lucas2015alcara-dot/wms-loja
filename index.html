@@ -198,6 +198,34 @@
       <div class="card"><h2>Pedidos embalados — pronto pra expedir</h2><div id="expFila"></div></div>
     </div>
 
+    <div class="view" id="view-enderecos">
+      <div class="card">
+        <h2>Novo endereço</h2>
+        <div class="row">
+          <input type="text" id="endCodigo" placeholder='Ex: Rua 01 - PP-A3'>
+          <button class="btn primary" id="endCriar" style="max-width:140px">+ criar</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Adicionar / transferir estoque</h2>
+        <label>SKU do produto</label>
+        <input type="text" id="trfSku" placeholder="SKU">
+        <label>Endereço de origem (deixe em branco se for entrada nova)</label>
+        <select id="trfOrigem" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px">
+          <option value="">— nenhum (entrada nova) —</option>
+        </select>
+        <label>Endereço de destino</label>
+        <select id="trfDestino" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px"></select>
+        <label>Quantidade</label>
+        <input type="number" id="trfQtd" min="1" value="1">
+        <button class="btn primary" id="trfSalvar" style="margin-top:10px; width:100%">Confirmar</button>
+      </div>
+      <div class="card">
+        <h2>Estoque por endereço</h2>
+        <div id="listaEstoqueEnderecos"></div>
+      </div>
+    </div>
+
     <div class="view" id="view-painel">
       <div class="kanban">
         <div class="kcol"><div class="n mono" id="kWait">0</div><div class="l">A separar</div></div>
@@ -341,7 +369,7 @@
 
   // ---------------- NAV ----------------
   var TABS = {
-    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["painel", "Painel"]],
+    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["painel", "Painel"]],
     separador: [["separacao", "Separar"], ["painel", "Painel"]],
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
     expedicao: [["expedicao", "Expedir"], ["painel", "Painel"]]
@@ -369,6 +397,7 @@
     if (name === "separacao") carregarFilaSeparacao();
     if (name === "embalagem") carregarFilaEmbalagem();
     if (name === "expedicao") carregarFilaExpedicao();
+    if (name === "enderecos") carregarEnderecos();
     if (name === "painel") carregarPainel();
     carregarContadores();
   }
@@ -549,15 +578,26 @@
     emb: { campo: "qtd_embalada", tipo: "embalagem", proximoStatus: "embalado", wrapId: "embAtivo", voltar: carregarFilaEmbalagem }
   };
 
+  var enderecosCache = [];
+  var sepEnderecoAtivo = null;
+
   function renderFase(pedidoId, fase) {
     var cfg = FASE_CFG[fase];
-    sb.from("pedidos").select("id,id_externo,itens_pedido(id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single().then(function (res) {
+    if (fase === "sep") sepEnderecoAtivo = null;
+    var carregarPedido = sb.from("pedidos").select("id,id_externo,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single();
+    var carregarEnderecosP = fase === "sep" ? sb.from("enderecos").select("id,codigo").eq("ativo", true) : Promise.resolve({ data: [] });
+
+    Promise.all([carregarPedido, carregarEnderecosP]).then(function (results) {
+      var res = results[0];
       if (res.error || !res.data) { toast("Erro ao carregar pedido", "err"); return; }
       var pedido = res.data;
+      enderecosCache = results[1].data || [];
       var wrap = document.getElementById(cfg.wrapId);
       var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
       var html = '<div class="card"><h2>Pedido <span class="mono">' + escapeHtml(pedido.id_externo) + '</span></h2>';
-      html += '<div class="scan-box"><input type="text" id="scanInput_' + fase + '" class="mono" placeholder="bipe ou digite o código" autocomplete="off" autocapitalize="off">';
+      html += '<div class="scan-box">';
+      if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">📍 Bipe o endereço antes do produto</div>';
+      html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
       html += '<button class="btn primary btn-camera" id="btnCam_' + fase + '">📷 Usar câmera do celular</button>';
       html += '<div class="scan-hint">Leitor USB/Bluetooth funciona direto. Sem leitor, use a câmera ou digite e aperte Enter.</div></div>';
       html += '<div id="itemsList_' + fase + '"></div>';
@@ -565,7 +605,7 @@
       wrap.innerHTML = html;
 
       renderItensFase(pedido.itens_pedido, fase);
-      if (allDone) concluirFase(pedido, fase);
+      if (allDone) { concluirFase(pedido, fase); return; }
 
       document.getElementById("voltar_" + fase).addEventListener("click", cfg.voltar);
       document.getElementById("btnCam_" + fase).addEventListener("click", function () {
@@ -606,11 +646,23 @@
       row.innerHTML =
         '<div class="top"><div><div class="name">' + escapeHtml(it.produtos.nome) + '</div><div class="sku mono">' + escapeHtml(it.produtos.sku) + '</div></div>' +
         '<div class="qty"><span class="' + (done ? "done-c" : "") + '">' + it[cfg.campo] + '</span> / ' + it.qtd + '</div></div>' +
+        '<div class="sku mono" id="locais_' + fase + '_' + it.id + '"></div>' +
         (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">reportar falta de estoque</button>');
       list.appendChild(row);
+      if (fase === "sep" && !done) carregarLocaisItem(it, fase);
     });
     list.querySelectorAll(".alerta-btn").forEach(function (btn) {
       btn.addEventListener("click", function () { reportarAlerta(btn.dataset.item, btn); });
+    });
+  }
+
+  function carregarLocaisItem(item, fase) {
+    sb.from("estoque_enderecos").select("quantidade,enderecos(codigo)").eq("produto_id", item.produto_id).gt("quantidade", 0).order("quantidade", { ascending: false }).then(function (res) {
+      var el = document.getElementById("locais_" + fase + "_" + item.id);
+      if (!el) return;
+      var lista = res.data || [];
+      if (lista.length === 0) { el.textContent = "📍 sem endereço com estoque cadastrado"; return; }
+      el.textContent = "📍 " + lista.map(function (r) { return r.enderecos.codigo + " (" + r.quantidade + ")"; }).join(" · ");
     });
   }
 
@@ -630,14 +682,45 @@
     return c;
   }
 
+  function atualizarEnderecoAtivoUI() {
+    var el = document.getElementById("endAtivo_sep");
+    if (!el) return;
+    el.textContent = sepEnderecoAtivo ? "📍 Endereço ativo: " + sepEnderecoAtivo.codigo : "📍 Bipe o endereço antes do produto";
+  }
+
   function handleScan(pedido, code, fase) {
     if (!code) return;
     var cfg = FASE_CFG[fase];
     var alvo = normalizarCodigo(code);
+
+    // na separação, primeiro tenta reconhecer como código de endereço
+    if (fase === "sep") {
+      var end = enderecosCache.find(function (e) { return normalizarCodigo(e.codigo) === alvo; });
+      if (end) {
+        sepEnderecoAtivo = end;
+        atualizarEnderecoAtivoUI();
+        toast("📍 Endereço ativo: " + end.codigo, "ok");
+        return;
+      }
+    }
+
     var item = pedido.itens_pedido.find(function (i) { return normalizarCodigo(i.produtos.sku) === alvo; });
-    if (!item) { toast("Código não pertence a este pedido", "err"); return; }
+    if (!item) { toast("Código não pertence a este pedido nem é um endereço conhecido", "err"); return; }
     if (item[cfg.campo] >= item.qtd) { toast("Item já conferido (" + item.qtd + "/" + item.qtd + ")", "err"); return; }
 
+    if (fase === "sep") {
+      if (!sepEnderecoAtivo) { toast("Bipe o endereço antes do produto", "err"); return; }
+      sb.rpc("bipar_endereco_sku", { p_produto_id: item.produto_id, p_endereco_id: sepEnderecoAtivo.id }).then(function (rpcRes) {
+        if (rpcRes.error) { toast("Esse SKU não tem estoque em " + sepEnderecoAtivo.codigo, "err"); return; }
+        aplicarIncrementoItem(pedido, item, fase);
+      });
+    } else {
+      aplicarIncrementoItem(pedido, item, fase);
+    }
+  }
+
+  function aplicarIncrementoItem(pedido, item, fase) {
+    var cfg = FASE_CFG[fase];
     var novoValor = item[cfg.campo] + 1;
     var eraPrimeiro = item[cfg.campo] === 0;
     var patch = {}; patch[cfg.campo] = novoValor;
@@ -739,6 +822,93 @@
         if (r.error) { toast("Erro: " + r.error.message, "err"); return; }
         carregarFilaExpedicao();
         carregarContadores();
+      });
+    });
+  }
+
+  // ---------------- ENDEREÇOS ----------------
+  var endWired = false;
+
+  function carregarEnderecos() {
+    carregarSelectsEndereco();
+    carregarListaEstoqueEnderecos();
+    if (!endWired) {
+      endWired = true;
+      document.getElementById("endCriar").addEventListener("click", criarEndereco);
+      document.getElementById("trfSalvar").addEventListener("click", salvarTransferencia);
+    }
+  }
+
+  function criarEndereco() {
+    var codigo = document.getElementById("endCodigo").value.trim();
+    if (!codigo) { toast("Informe o código do endereço", "err"); return; }
+    sb.from("enderecos").insert({ codigo: codigo }).then(function (res) {
+      if (res.error) { toast("Erro: " + (res.error.message.indexOf("duplicate") >= 0 ? "esse endereço já existe" : res.error.message), "err"); return; }
+      toast("Endereço \"" + codigo + "\" criado", "ok");
+      document.getElementById("endCodigo").value = "";
+      carregarSelectsEndereco();
+    });
+  }
+
+  function carregarSelectsEndereco() {
+    sb.from("enderecos").select("id,codigo").eq("ativo", true).order("codigo").then(function (res) {
+      var lista = res.data || [];
+      var origem = document.getElementById("trfOrigem");
+      var destino = document.getElementById("trfDestino");
+      origem.innerHTML = '<option value="">— nenhum (entrada nova) —</option>';
+      destino.innerHTML = "";
+      lista.forEach(function (e) {
+        origem.innerHTML += '<option value="' + e.id + '">' + escapeHtml(e.codigo) + '</option>';
+        destino.innerHTML += '<option value="' + e.id + '">' + escapeHtml(e.codigo) + '</option>';
+      });
+      if (lista.length === 0) destino.innerHTML = '<option value="">nenhum endereço cadastrado ainda</option>';
+    });
+  }
+
+  function salvarTransferencia() {
+    var sku = document.getElementById("trfSku").value.trim();
+    var origemId = document.getElementById("trfOrigem").value || null;
+    var destinoId = document.getElementById("trfDestino").value;
+    var qtd = parseInt(document.getElementById("trfQtd").value, 10) || 0;
+    if (!sku) { toast("Informe o SKU do produto", "err"); return; }
+    if (!destinoId) { toast("Escolha o endereço de destino", "err"); return; }
+    if (qtd <= 0) { toast("Quantidade inválida", "err"); return; }
+    var btn = document.getElementById("trfSalvar");
+    btn.disabled = true;
+    sb.from("produtos").select("id").eq("sku", sku).maybeSingle().then(function (res) {
+      if (res.error || !res.data) throw new Error("SKU \"" + sku + "\" não encontrado nos produtos cadastrados");
+      return sb.rpc("transferir_estoque", {
+        p_produto_id: res.data.id,
+        p_endereco_origem_id: origemId,
+        p_endereco_destino_id: destinoId,
+        p_quantidade: qtd
+      });
+    }).then(function (res) {
+      if (res && res.error) {
+        var msg = res.error.message.indexOf("estoque_insuficiente") >= 0 ? "estoque insuficiente no endereço de origem" : res.error.message;
+        throw new Error(msg);
+      }
+      toast("Estoque atualizado ✓", "ok");
+      document.getElementById("trfSku").value = "";
+      document.getElementById("trfQtd").value = "1";
+      carregarListaEstoqueEnderecos();
+    }).catch(function (err) {
+      toast("Erro: " + (err.message || err), "err");
+    }).finally(function () { btn.disabled = false; });
+  }
+
+  function carregarListaEstoqueEnderecos() {
+    sb.from("estoque_enderecos").select("quantidade,produtos(sku,nome),enderecos(codigo)").gt("quantidade", 0).order("atualizado_em", { ascending: false }).then(function (res) {
+      var el = document.getElementById("listaEstoqueEnderecos");
+      el.innerHTML = "";
+      var lista = res.data || [];
+      if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum estoque endereçado ainda.</div>'; return; }
+      lista.forEach(function (r) {
+        var row = document.createElement("div");
+        row.className = "order-row";
+        row.style.cursor = "default";
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + ' · ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
+        el.appendChild(row);
       });
     });
   }
