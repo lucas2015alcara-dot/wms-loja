@@ -155,6 +155,12 @@
 
   <main>
     <div class="view" id="view-pedidos">
+      <div class="card" id="cardSyncOlist" style="display:none">
+        <h2>Integração Olist</h2>
+        <p class="meta" style="margin-bottom:10px">Busca pedidos aprovados dos últimos 7 dias direto no Olist e cria aqui os que ainda não existem.</p>
+        <button class="btn primary" id="btnSyncOlist" style="width:100%">Sincronizar pedidos do Olist</button>
+        <div id="syncOlistResultado" style="margin-top:10px; font-size:13px; color:var(--text-dim)"></div>
+      </div>
       <div class="card">
         <h2>Novo pedido</h2>
         <div class="row">
@@ -444,6 +450,7 @@
         document.getElementById("appShell").style.display = "flex";
         document.getElementById("hUser").textContent = meu.nome;
         document.getElementById("hPapel").textContent = { admin: "Admin", separador: "Separador", embalador: "Embalador", expedicao: "Expedição" }[meu.papel] || meu.papel;
+        document.getElementById("cardSyncOlist").style.display = meu.papel === "admin" ? "" : "none";
         montarNav();
         carregarContadores();
       });
@@ -585,6 +592,40 @@
       });
     });
     return Promise.all(promessas);
+  }
+
+  var btnSyncOlist = document.getElementById("btnSyncOlist");
+  if (btnSyncOlist) {
+    btnSyncOlist.addEventListener("click", function () {
+      var out = document.getElementById("syncOlistResultado");
+      btnSyncOlist.disabled = true;
+      btnSyncOlist.textContent = "Sincronizando…";
+      out.textContent = "";
+      sb.functions.invoke("sincronizar-olist", { method: "POST" }).then(function (res) {
+        btnSyncOlist.disabled = false;
+        btnSyncOlist.textContent = "Sincronizar pedidos do Olist";
+        if (res.error) {
+          out.textContent = "Erro: " + res.error.message;
+          toast("Falha ao sincronizar com o Olist.", "err");
+          return;
+        }
+        var d = res.data || {};
+        if (d.error) {
+          out.textContent = "Erro do Olist: " + d.error + (d.detalhe ? " — " + JSON.stringify(d.detalhe) : "");
+          toast("Olist retornou um erro.", "err");
+          return;
+        }
+        var linhas = [];
+        linhas.push(d.importados + " pedido(s) importado(s)");
+        linhas.push(d.ja_existentes + " já existiam");
+        if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem SKU reconhecido");
+        if (d.skus_nao_encontrados && d.skus_nao_encontrados.length) linhas.push("SKUs não cadastrados: " + d.skus_nao_encontrados.join(", "));
+        out.textContent = linhas.join(" · ");
+        toast(d.importados + " pedido(s) importado(s) do Olist.", "ok");
+        carregarFilaPedidos();
+        carregarContadores();
+      });
+    });
   }
 
   function carregarFilaPedidos() {
