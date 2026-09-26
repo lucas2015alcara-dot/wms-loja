@@ -618,8 +618,8 @@
         var linhas = [];
         linhas.push(d.importados + " pedido(s) importado(s)");
         linhas.push(d.ja_existentes + " já existiam");
-        if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem SKU reconhecido");
-        if (d.skus_nao_encontrados && d.skus_nao_encontrados.length) linhas.push("SKUs não cadastrados: " + d.skus_nao_encontrados.join(", "));
+        if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem item válido");
+        if (d.produtos_cadastrados_automaticamente && d.produtos_cadastrados_automaticamente.length) linhas.push("produtos novos cadastrados: " + d.produtos_cadastrados_automaticamente.join("; "));
         out.textContent = linhas.join(" · ");
         toast(d.importados + " pedido(s) importado(s) do Olist.", "ok");
         carregarFilaPedidos();
