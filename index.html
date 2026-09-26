@@ -11,9 +11,9 @@
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
-    --bg: #12161a; --surface: #1b2127; --surface-2: #242b32; --line: #313a42;
-    --accent: #f2a93b; --blue: #4fa6d8; --green: #4caf6d; --red: #e2544f;
-    --text: #e8eaed; --text-dim: #8b95a1;
+    --bg: #101214; --surface: #191b1e; --surface-2: #212327; --line: #302c1a;
+    --accent: #ffcc00; --accent-dim: #a88400; --blue: #6a5cff; --green: #4caf6d; --red: #e2544f;
+    --text: #f2f2f0; --text-dim: #97968e;
     box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -139,9 +139,12 @@
 
 <div id="appShell">
   <header>
-    <div>
-      <h1 id="hUser">—</h1>
-      <div class="sub" id="hPapel">—</div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div id="brandMark" aria-hidden="true" style="width:30px; height:30px; min-width:30px; border-radius:50%; background:var(--accent); color:#12161a; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800; box-shadow:0 0 0 1px var(--line);">⏻</div>
+      <div>
+        <h1 id="hUser">—</h1>
+        <div class="sub" id="hPapel">—</div>
+      </div>
     </div>
     <button id="btnLogout">Sair</button>
   </header>
