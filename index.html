@@ -123,7 +123,7 @@
   .pick-item .alerta-btn { margin-top: 8px; font-size: 11px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-family: inherit; }
   .alerta-tag { font-size: 11px; color: var(--red); margin-top: 6px; }
 
-  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .kanban { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
   .kcol { border: 1px solid var(--line); border-radius: 12px; padding: 16px 8px 12px; text-align: center; position: relative; overflow: hidden; background: var(--surface); transition: transform 0.15s; }
   .kcol::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; }
   .kcol .ic { font-size: 20px; line-height: 1; margin-bottom: 6px; }
@@ -133,6 +133,8 @@
   .kcol.sep { background: #142331; } .kcol.sep::before { background: var(--blue); } .kcol.sep .n { color: var(--blue); }
   .kcol.emb { background: #142a1e; } .kcol.emb::before { background: var(--green); } .kcol.emb .n { color: var(--green); }
   .kcol.exp { background: #1c2024; } .kcol.exp::before { background: var(--text-dim); } .kcol.exp .n { color: var(--text-dim); }
+  .kcol.pend { background: #2c1414; } .kcol.pend::before { background: var(--red); } .kcol.pend .n { color: var(--red); }
+  @media (max-width: 640px) { .kanban { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 420px) { .kanban { grid-template-columns: repeat(2, 1fr); } }
 
   .toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line); color: var(--text); padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
@@ -377,9 +379,10 @@
         <div class="kcol sep"><div class="ic">📦</div><div class="n mono" id="kSep">0</div><div class="l">Separado</div></div>
         <div class="kcol emb"><div class="ic">🏷️</div><div class="n mono" id="kEmb">0</div><div class="l">Embalado</div></div>
         <div class="kcol exp"><div class="ic">🚚</div><div class="n mono" id="kExp">0</div><div class="l">Expedido</div></div>
+        <div class="kcol pend"><div class="ic">⚠️</div><div class="n mono" id="kPend">0</div><div class="l">Pendências</div></div>
       </div>
       <div class="card" id="alertasCard" style="display:none">
-        <h2>Alertas de estoque</h2>
+        <h2>Pendências — a resolver</h2>
         <div id="listaAlertas"></div>
       </div>
       <div class="card">
@@ -602,6 +605,10 @@
       document.getElementById("kSep").textContent = kv.separado;
       document.getElementById("kEmb").textContent = kv.embalado;
       document.getElementById("kExp").textContent = kv.expedido;
+    });
+    sb.rpc("contagem_pendencias").then(function (res) {
+      var el = document.getElementById("kPend");
+      if (el && !res.error) el.textContent = res.data || 0;
     });
   }
 
@@ -1085,12 +1092,12 @@
         '<div class="top"><div><div class="name">' + escapeHtml(it.produtos.nome) + '</div><div class="sku mono">' + escapeHtml(it.produtos.sku) + '</div></div>' +
         '<div class="qty"><span class="' + (done ? "done-c" : "") + '">' + it[cfg.campo] + '</span> / ' + it.qtd + '</div></div>' +
         '<div class="sku mono" id="locais_' + fase + '_' + it.id + '"></div>' +
-        (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">reportar falta de estoque</button>');
+        (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">' + (fase === "sep" ? "reportar falta de estoque" : "reportar problema") + '</button>');
       list.appendChild(row);
       if (fase === "sep" && !done) carregarLocaisItem(it, fase);
     });
     list.querySelectorAll(".alerta-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () { reportarAlerta(btn.dataset.item, btn); });
+      btn.addEventListener("click", function () { reportarAlerta(btn.dataset.item, btn, fase); });
     });
   }
 
@@ -1104,11 +1111,12 @@
     });
   }
 
-  function reportarAlerta(itemId, btnEl) {
-    sb.from("alertas_estoque").insert({ item_id: itemId, reportado_por: meu.id }).then(function (res) {
+  function reportarAlerta(itemId, btnEl, fase) {
+    var origem = fase === "emb" ? "embalagem" : "separacao";
+    sb.from("alertas_estoque").insert({ item_id: itemId, reportado_por: meu.id, origem: origem }).then(function (res) {
       if (res.error) { toast("Erro ao reportar: " + res.error.message, "err"); return; }
-      toast("Alerta enviado ao admin", "ok");
-      btnEl.outerHTML = '<div class="alerta-tag">⚠ falta reportada</div>';
+      toast("Reportado ao admin", "ok");
+      btnEl.outerHTML = '<div class="alerta-tag">⚠ ' + (origem === "embalagem" ? "problema reportado" : "falta reportada") + '</div>';
     });
   }
 
@@ -1734,18 +1742,19 @@
     carregarContadores();
     if (meu.papel === "admin") {
       document.getElementById("alertasCard").style.display = "";
-      sb.from("alertas_estoque").select("id,resolvido,criado_em,item_id,itens_pedido(produtos(sku,nome),pedido_id,pedidos(id_externo))").eq("resolvido", false).then(function (res) {
+      sb.from("alertas_estoque").select("id,resolvido,criado_em,item_id,origem,itens_pedido(produtos(sku,nome),pedido_id,pedidos(id_externo))").eq("resolvido", false).then(function (res) {
         var el = document.getElementById("listaAlertas");
         el.innerHTML = "";
         var lista = res.data || [];
-        if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum alerta pendente.</div>'; return; }
+        if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhuma pendência em aberto.</div>'; return; }
         lista.forEach(function (a) {
           var prod = a.itens_pedido && a.itens_pedido.produtos ? a.itens_pedido.produtos : { sku: "?", nome: "?" };
           var ped = a.itens_pedido && a.itens_pedido.pedidos ? a.itens_pedido.pedidos.id_externo : "?";
+          var origemLabel = a.origem === "embalagem" ? "embalagem" : "separação";
           var row = document.createElement("div");
           row.className = "order-row";
           row.style.cursor = "default";
-          row.innerHTML = '<div><div class="oid">' + escapeHtml(prod.nome) + '</div><div class="meta mono">' + escapeHtml(prod.sku) + ' · pedido ' + escapeHtml(ped) + '</div></div><button class="btn small" data-res="' + a.id + '">resolver</button>';
+          row.innerHTML = '<div><div class="oid">' + escapeHtml(prod.nome) + ' <span class="badge wait" style="margin-left:6px">' + origemLabel + '</span></div><div class="meta mono">' + escapeHtml(prod.sku) + ' · pedido ' + escapeHtml(ped) + '</div></div><button class="btn small" data-res="' + a.id + '">resolver</button>';
           el.appendChild(row);
         });
         el.querySelectorAll("[data-res]").forEach(function (btn) {

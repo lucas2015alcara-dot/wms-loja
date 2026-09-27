@@ -21,36 +21,35 @@
   }
   header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 28px 44px 18px; flex: none;
+    padding: 26px 44px 14px; flex: none;
   }
   header .brand { display: flex; align-items: center; gap: 14px; }
   header .brandMark {
-    width: 46px; height: 46px; border-radius: 50%; background: var(--yellow);
+    width: 44px; height: 44px; border-radius: 50%; background: var(--yellow);
     color: #12161a; display: flex; align-items: center; justify-content: center;
-    font-size: 24px; font-weight: 800;
+    font-size: 22px; font-weight: 800;
   }
-  header h1 { font-size: 22px; margin: 0; font-weight: 700; }
-  header .sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
-  header .clock { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 700; letter-spacing: 0.02em; }
-  header .clock .date { font-size: 13px; color: var(--text-dim); font-weight: 500; text-align: right; margin-top: 2px; font-family: 'Inter', sans-serif; }
+  header h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  header .sub { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+  header .clock { font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 700; letter-spacing: 0.02em; text-align: right; }
+  header .clock .date { font-size: 12.5px; color: var(--text-dim); font-weight: 500; margin-top: 2px; font-family: 'Inter', sans-serif; }
 
   .board {
-    flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px;
-    padding: 6px 44px 44px; min-height: 0;
+    flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr);
+    gap: 22px; padding: 6px 44px 36px; min-height: 0;
   }
   .col {
-    border-radius: 22px; display: flex; flex-direction: column; align-items: center;
+    border-radius: 26px; display: flex; flex-direction: column; align-items: center;
     justify-content: center; position: relative; overflow: hidden;
     border: 1px solid rgba(255,255,255,0.06);
   }
-  .col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 10px; }
+  .col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 12px; }
   .col .label {
-    position: absolute; top: 34px; left: 0; right: 0; text-align: center;
-    font-size: 22px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    font-size: clamp(18px, 2vw, 26px); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
   }
   .col .n {
     font-family: 'IBM Plex Mono', monospace; font-weight: 800;
-    font-size: clamp(90px, 11vw, 168px); line-height: 1; margin-top: 10px;
+    font-size: clamp(80px, 9vw, 150px); line-height: 1; margin-top: 6px;
   }
   .col .n.pulse { animation: pulse 0.6s ease; }
   @keyframes pulse { 0% { transform: scale(1); } 30% { transform: scale(1.08); } 100% { transform: scale(1); } }
@@ -58,12 +57,16 @@
   .col.wait { background: #2a2308; } .col.wait::before { background: var(--yellow); } .col.wait .label { color: var(--yellow); } .col.wait .n { color: var(--yellow); }
   .col.emb { background: #171233; } .col.emb::before { background: var(--blue); } .col.emb .label { color: var(--blue); } .col.emb .n { color: var(--blue); }
   .col.pend { background: #2c1414; } .col.pend::before { background: var(--red); } .col.pend .label { color: var(--red); } .col.pend .n { color: var(--red); }
-  .col.pend.zero { opacity: 0.45; }
+  .col.pend.alerta { animation: glow 1.6s ease-in-out infinite; }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(226, 84, 79, 0); }
+    50% { box-shadow: 0 0 0 10px rgba(226, 84, 79, 0.18); }
+  }
   .col.exp { background: #12291c; } .col.exp::before { background: var(--green); } .col.exp .label { color: var(--green); } .col.exp .n { color: var(--green); }
 
   footer {
-    flex: none; padding: 0 44px 22px; display: flex; justify-content: space-between;
-    font-size: 12.5px; color: var(--text-dim);
+    flex: none; padding: 0 44px 20px; display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--text-dim);
   }
   #status.err { color: var(--red); }
 </style>
@@ -114,8 +117,6 @@
   var SUPABASE_KEY = "sb_publishable_8Zox-r5ttwflMRl5MxtIqw_vXp9rEch";
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  var atual = { a_separar: null, separado: null, expedido: null };
-
   function setNum(id, val) {
     var el = document.getElementById(id);
     if (el.textContent !== String(val)) {
@@ -127,24 +128,30 @@
   }
 
   function carregar() {
-    sb.rpc("contagem_pedidos").then(function (res) {
-      var st = document.getElementById("status");
-      if (res.error) {
+    var st = document.getElementById("status");
+    Promise.all([
+      sb.rpc("contagem_pedidos"),
+      sb.rpc("contagem_pendencias")
+    ]).then(function (results) {
+      var pedidosRes = results[0];
+      var pendRes = results[1];
+      if (pedidosRes.error || pendRes.error) {
         st.textContent = "erro ao atualizar — tentando de novo…";
         st.className = "err";
         return;
       }
       st.textContent = "atualizado às " + new Date().toLocaleTimeString("pt-BR");
       st.className = "";
+
       var kv = { a_separar: 0, separado: 0, embalado: 0, expedido: 0 };
-      (res.data || []).forEach(function (r) { kv[r.status] = r.total; });
+      (pedidosRes.data || []).forEach(function (r) { kv[r.status] = r.total; });
       setNum("nWait", kv.a_separar);
       setNum("nEmb", kv.separado);
       setNum("nExp", kv.expedido);
-      // "Pendências" (pedidos em conflito loja x e-commerce, etc.) ainda não é
-      // detectado automaticamente pelo sistema — fica em 0 até essa lógica existir.
-      setNum("nPend", 0);
-      document.getElementById("colPend").classList.add("zero");
+
+      var pend = pendRes.data || 0;
+      setNum("nPend", pend);
+      document.getElementById("colPend").classList.toggle("alerta", pend > 0);
     });
   }
 
