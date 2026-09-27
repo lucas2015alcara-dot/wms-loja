@@ -41,6 +41,7 @@
   nav button { flex: 1; min-width: 84px; background: none; border: none; color: var(--text-dim); font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 12px 6px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
   nav button svg { flex: none; }
   nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .navGroupLabel { display: none; }
 
   .mainCol { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .counters { display: flex; gap: 6px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -59,6 +60,8 @@
     nav { flex: 1 1 auto; flex-direction: column; overflow-x: hidden; overflow-y: auto; background: none; border: none; padding: 6px 10px; gap: 2px; }
     nav button { flex: none; width: 100%; justify-content: flex-start; text-align: left; border-bottom: none; border-radius: 8px; padding: 10px 10px; }
     nav button.active { background: rgba(255, 204, 0, 0.12); border-bottom-color: transparent; }
+    .navGroupLabel { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-dim); padding: 14px 10px 6px; }
+    nav > .navGroupLabel:first-child { padding-top: 6px; }
     .sbFoot { flex: 0 0 auto; border-top: 1px solid var(--line); padding: 14px 16px; }
   }
   .view { display: none; max-width: 640px; margin: 0 auto; }
@@ -529,18 +532,40 @@
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
     expedicao: [["expedicao", "Expedir"], ["painel", "Painel"]]
   };
+  var NAV_GROUPS = {
+    admin: [
+      { label: "OPERAÇÃO", views: ["pedidos", "separacao", "embalagem", "expedicao"] },
+      { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario", "relatorios"] },
+      { label: "ADMIN", views: ["painel"] }
+    ]
+  };
   function montarNav() {
     var tabs = TABS[meu.papel] || [["painel", "Painel"]];
     var nav = document.getElementById("navBar");
     nav.innerHTML = "";
-    tabs.forEach(function (t, i) {
+    var groups = NAV_GROUPS[meu.papel];
+    var first = true;
+    function criarBotao(t) {
       var b = document.createElement("button");
       b.innerHTML = (TAB_ICONS[t[0]] || "") + "<span>" + t[1] + "</span>";
       b.dataset.view = t[0];
-      if (i === 0) b.classList.add("active");
+      if (first) { b.classList.add("active"); first = false; }
       b.addEventListener("click", function () { showView(t[0]); });
       nav.appendChild(b);
-    });
+    }
+    if (groups) {
+      var byView = {};
+      tabs.forEach(function (t) { byView[t[0]] = t; });
+      groups.forEach(function (g) {
+        var header = document.createElement("span");
+        header.className = "navGroupLabel";
+        header.textContent = g.label;
+        nav.appendChild(header);
+        g.views.forEach(function (v) { if (byView[v]) criarBotao(byView[v]); });
+      });
+    } else {
+      tabs.forEach(function (t) { criarBotao(t); });
+    }
     showView(tabs[0][0]);
   }
 
