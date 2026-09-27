@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WMS — Painel TV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root {
+    --bg: #0c0d0f; --yellow: #ffcc00; --blue: #6a5cff; --green: #4caf6d; --red: #e2544f;
+    --text: #f2f2f0; --text-dim: #8b8a83;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  body {
+    color: var(--text); font-family: 'Inter', -apple-system, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 28px 44px 18px; flex: none;
+  }
+  header .brand { display: flex; align-items: center; gap: 14px; }
+  header .brandMark {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--yellow);
+    color: #12161a; display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 800;
+  }
+  header h1 { font-size: 22px; margin: 0; font-weight: 700; }
+  header .sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  header .clock { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 700; letter-spacing: 0.02em; }
+  header .clock .date { font-size: 13px; color: var(--text-dim); font-weight: 500; text-align: right; margin-top: 2px; font-family: 'Inter', sans-serif; }
+
+  .board {
+    flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px;
+    padding: 6px 44px 44px; min-height: 0;
+  }
+  .col {
+    border-radius: 22px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; position: relative; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 10px; }
+  .col .label {
+    position: absolute; top: 34px; left: 0; right: 0; text-align: center;
+    font-size: 22px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .col .n {
+    font-family: 'IBM Plex Mono', monospace; font-weight: 800;
+    font-size: clamp(90px, 11vw, 168px); line-height: 1; margin-top: 10px;
+  }
+  .col .n.pulse { animation: pulse 0.6s ease; }
+  @keyframes pulse { 0% { transform: scale(1); } 30% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+  .col.wait { background: #2a2308; } .col.wait::before { background: var(--yellow); } .col.wait .label { color: var(--yellow); } .col.wait .n { color: var(--yellow); }
+  .col.emb { background: #171233; } .col.emb::before { background: var(--blue); } .col.emb .label { color: var(--blue); } .col.emb .n { color: var(--blue); }
+  .col.pend { background: #2c1414; } .col.pend::before { background: var(--red); } .col.pend .label { color: var(--red); } .col.pend .n { color: var(--red); }
+  .col.pend.zero { opacity: 0.45; }
+  .col.exp { background: #12291c; } .col.exp::before { background: var(--green); } .col.exp .label { color: var(--green); } .col.exp .n { color: var(--green); }
+
+  footer {
+    flex: none; padding: 0 44px 22px; display: flex; justify-content: space-between;
+    font-size: 12.5px; color: var(--text-dim);
+  }
+  #status.err { color: var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brandMark" aria-hidden="true">⏻</div>
+    <div>
+      <h1>WMS — Pilchs Info</h1>
+      <div class="sub">Painel de operação em tempo real</div>
+    </div>
+  </div>
+  <div class="clock">
+    <div id="relogio">--:--:--</div>
+    <div class="date" id="dataHoje">—</div>
+  </div>
+</header>
+
+<div class="board">
+  <div class="col wait">
+    <div class="label">A separar</div>
+    <div class="n" id="nWait">0</div>
+  </div>
+  <div class="col emb">
+    <div class="label">A embalar</div>
+    <div class="n" id="nEmb">0</div>
+  </div>
+  <div class="col pend" id="colPend">
+    <div class="label">Pendências</div>
+    <div class="n" id="nPend">0</div>
+  </div>
+  <div class="col exp">
+    <div class="label">Expedidos hoje</div>
+    <div class="n" id="nExp">0</div>
+  </div>
+</div>
+
+<footer>
+  <span id="status">conectando…</span>
+  <span>atualiza automaticamente a cada 20s</span>
+</footer>
+
+<script>
+(function () {
+  var SUPABASE_URL = "https://levnxrjcvqubfowvvurd.supabase.co";
+  var SUPABASE_KEY = "sb_publishable_8Zox-r5ttwflMRl5MxtIqw_vXp9rEch";
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var atual = { a_separar: null, separado: null, expedido: null };
+
+  function setNum(id, val) {
+    var el = document.getElementById(id);
+    if (el.textContent !== String(val)) {
+      el.textContent = val;
+      el.classList.remove("pulse");
+      void el.offsetWidth;
+      el.classList.add("pulse");
+    }
+  }
+
+  function carregar() {
+    sb.rpc("contagem_pedidos").then(function (res) {
+      var st = document.getElementById("status");
+      if (res.error) {
+        st.textContent = "erro ao atualizar — tentando de novo…";
+        st.className = "err";
+        return;
+      }
+      st.textContent = "atualizado às " + new Date().toLocaleTimeString("pt-BR");
+      st.className = "";
+      var kv = { a_separar: 0, separado: 0, embalado: 0, expedido: 0 };
+      (res.data || []).forEach(function (r) { kv[r.status] = r.total; });
+      setNum("nWait", kv.a_separar);
+      setNum("nEmb", kv.separado);
+      setNum("nExp", kv.expedido);
+      // "Pendências" (pedidos em conflito loja x e-commerce, etc.) ainda não é
+      // detectado automaticamente pelo sistema — fica em 0 até essa lógica existir.
+      setNum("nPend", 0);
+      document.getElementById("colPend").classList.add("zero");
+    });
+  }
+
+  function atualizarRelogio() {
+    var d = new Date();
+    document.getElementById("relogio").textContent = d.toLocaleTimeString("pt-BR");
+    document.getElementById("dataHoje").textContent = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  }
+
+  atualizarRelogio();
+  setInterval(atualizarRelogio, 1000);
+
+  carregar();
+  setInterval(carregar, 20000);
+
+  // recarrega a página inteira de tempos em tempos (TV fica ligada o dia todo)
+  setInterval(function () { location.reload(); }, 60 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
