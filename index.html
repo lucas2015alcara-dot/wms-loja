@@ -440,23 +440,49 @@
       if (beepCtx.state === "suspended") beepCtx.resume();
     } catch (e) { /* ignora */ }
   }
-  function beep() {
+  // toca um tom: freq (Hz), inicio e duração (s, relativos a agora), volume 0–1
+  function tocarTom(freq, inicio, duracao, volume) {
+    var t0 = beepCtx.currentTime + inicio;
+    var osc = beepCtx.createOscillator();
+    var gain = beepCtx.createGain();
+    osc.type = "square"; // onda quadrada = timbre de leitor de código de barras, soa mais alto
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.005);
+    gain.gain.setValueAtTime(volume, t0 + duracao - 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duracao);
+    osc.connect(gain).connect(beepCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duracao + 0.01);
+  }
+  var ultimoSomEm = 0;
+  function prepararSom() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return false;
+    if (!beepCtx) beepCtx = new Ctx();
+    if (beepCtx.state === "suspended") beepCtx.resume();
+    // evita dois sons encavalados (ex.: "último item ✓" logo seguido de "pedido concluído ✓")
+    var agora = Date.now();
+    if (agora - ultimoSomEm < 300) return false;
+    ultimoSomEm = agora;
+    return true;
+  }
+  // leitura certa: bipe curto e agudo, estilo leitor de supermercado
+  function somOk() {
+    try { if (prepararSom()) tocarTom(2400, 0, 0.11, 0.5); } catch (e) { /* áudio bloqueado — ignora */ }
+  }
+  // erro: "bu-bu" grave, dois pulsos
+  function somErro() {
     try {
-      var Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      if (!beepCtx) beepCtx = new Ctx();
-      if (beepCtx.state === "suspended") beepCtx.resume();
-      var osc = beepCtx.createOscillator();
-      var gain = beepCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 1800;
-      gain.gain.setValueAtTime(0.001, beepCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.2, beepCtx.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, beepCtx.currentTime + 0.13);
-      osc.connect(gain).connect(beepCtx.destination);
-      osc.start();
-      osc.stop(beepCtx.currentTime + 0.14);
-    } catch (e) { /* áudio bloqueado pelo navegador — ignora */ }
+      if (!prepararSom()) return;
+      tocarTom(330, 0, 0.16, 0.6);
+      tocarTom(330, 0.24, 0.16, 0.6);
+    } catch (e) { /* áudio bloqueado — ignora */ }
+  }
+  // mensagem de bipagem: mostra o aviso e toca o som correspondente
+  function toastScan(msg, kind) {
+    toast(msg, kind);
+    if (kind === "err") somErro(); else if (kind === "ok") somOk();
   }
   function escapeHtml(s) {
     return (s || "").toString().replace(/[&<>"']/g, function (c) {
@@ -491,7 +517,6 @@
       if (decodedText === camLastCode && (agora - camLastTime) < 1500) return; // evita ler o mesmo código 2x seguidas
       camLastCode = decodedText; camLastTime = agora;
       if (navigator.vibrate) navigator.vibrate(80);
-      beep();
       document.getElementById("camStatus").textContent = "Lido: " + decodedText;
       if (camOnDetect) camOnDetect(decodedText);
     }, function () { /* erro de leitura de frame, ignora — é contínuo */ }).catch(function (err) {
@@ -904,7 +929,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (input.value.trim()) beep();
+          destravarAudio();
           handleScanLote(input.value.trim());
           input.value = "";
         }
@@ -921,16 +946,16 @@
       loteEnderecoAtivo = end;
       var hint = document.getElementById("loteEnderecoHint");
       if (hint) hint.textContent = "📍 Endereço ativo: " + end.codigo;
-      toast("📍 Endereço ativo: " + end.codigo, "ok");
+      toastScan("📍 Endereço ativo: " + end.codigo, "ok");
       return;
     }
 
-    if (normalizarCodigo(loteAtivo.sku) !== alvo) { toast("Esse código não é o SKU desse lote nem um endereço conhecido", "err"); return; }
-    if (!loteEnderecoAtivo) { toast("Bipe o endereço antes do produto", "err"); return; }
-    if (loteAtivo.pendentes.length === 0) { toast("Lote já concluído", "err"); return; }
+    if (normalizarCodigo(loteAtivo.sku) !== alvo) { toastScan("Esse código não é o SKU desse lote nem um endereço conhecido", "err"); return; }
+    if (!loteEnderecoAtivo) { toastScan("Bipe o endereço antes do produto", "err"); return; }
+    if (loteAtivo.pendentes.length === 0) { toastScan("Lote já concluído", "err"); return; }
 
     sb.rpc("bipar_endereco_sku", { p_produto_id: loteAtivo.produto_id, p_endereco_id: loteEnderecoAtivo.id }).then(function (rpcRes) {
-      if (rpcRes.error) { toast("Esse SKU não tem estoque em " + loteEnderecoAtivo.codigo, "err"); return; }
+      if (rpcRes.error) { toastScan("Esse SKU não tem estoque em " + loteEnderecoAtivo.codigo, "err"); return; }
       confirmarProximoDoLote();
     });
   }
@@ -949,7 +974,7 @@
           loteAtivo.confirmados++;
           var c = document.getElementById("loteContador");
           if (c) c.textContent = loteAtivo.confirmados + "/" + loteAtivo.total + " confirmadas";
-          toast("Pedido " + alvo.id_externo + " ✓ (" + loteAtivo.confirmados + "/" + loteAtivo.total + ")", "ok");
+          toastScan("Pedido " + alvo.id_externo + " ✓ (" + loteAtivo.confirmados + "/" + loteAtivo.total + ")", "ok");
           carregarContadores();
           if (loteAtivo.pendentes.length === 0) {
             toast("Lote concluído ✓", "ok");
@@ -995,7 +1020,7 @@
       input.onkeydown = function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (input.value.trim()) beep();
+          destravarAudio();
           buscarPedidosPorItemEmbalagem(input.value.trim());
           input.value = "";
         }
@@ -1019,6 +1044,7 @@
       var el = document.getElementById("embFila");
       if (resProd.error || !resProd.data) {
         el.innerHTML = '<div class="empty">Nenhum produto com esse SKU.</div>';
+        somErro();
         return;
       }
       sb.from("itens_pedido")
@@ -1029,8 +1055,10 @@
           var itens = (res.data || []).filter(function (i) { return i.qtd_embalada < i.qtd; });
           if (itens.length === 0) {
             el.innerHTML = '<div class="empty">Nenhum pedido aguardando embalagem com o SKU "' + escapeHtml(codigo) + '".</div>';
+            somErro();
             return;
           }
+          somOk();
           el.innerHTML = '<div class="scan-hint" style="margin:10px 0">' + escapeHtml(resProd.data.nome) + ' — escolha o pedido:</div>';
           itens.forEach(function (i) {
             var o = i.pedidos;
@@ -1103,7 +1131,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (input.value.trim()) beep();
+          destravarAudio();
           handleScan(pedido, input.value.trim(), fase);
           input.value = "";
         }
@@ -1187,19 +1215,19 @@
       if (end) {
         sepEnderecoAtivo = end;
         atualizarEnderecoAtivoUI();
-        toast("📍 Endereço ativo: " + end.codigo, "ok");
+        toastScan("📍 Endereço ativo: " + end.codigo, "ok");
         return;
       }
     }
 
     var item = pedido.itens_pedido.find(function (i) { return normalizarCodigo(i.produtos.sku) === alvo; });
-    if (!item) { toast("Código não pertence a este pedido nem é um endereço conhecido", "err"); return; }
-    if (item[cfg.campo] >= item.qtd) { toast("Item já conferido (" + item.qtd + "/" + item.qtd + ")", "err"); return; }
+    if (!item) { toastScan("Código não pertence a este pedido nem é um endereço conhecido", "err"); return; }
+    if (item[cfg.campo] >= item.qtd) { toastScan("Item já conferido (" + item.qtd + "/" + item.qtd + ")", "err"); return; }
 
     if (fase === "sep") {
-      if (!sepEnderecoAtivo) { toast("Bipe o endereço antes do produto", "err"); return; }
+      if (!sepEnderecoAtivo) { toastScan("Bipe o endereço antes do produto", "err"); return; }
       sb.rpc("bipar_endereco_sku", { p_produto_id: item.produto_id, p_endereco_id: sepEnderecoAtivo.id }).then(function (rpcRes) {
-        if (rpcRes.error) { toast("Esse SKU não tem estoque em " + sepEnderecoAtivo.codigo, "err"); return; }
+        if (rpcRes.error) { toastScan("Esse SKU não tem estoque em " + sepEnderecoAtivo.codigo, "err"); return; }
         aplicarIncrementoItem(pedido, item, fase);
       });
     } else {
@@ -1214,7 +1242,7 @@
     var patch = {}; patch[cfg.campo] = novoValor;
 
     sb.from("itens_pedido").update(patch).eq("id", item.id).then(function (res) {
-      if (res.error) { toast("Erro ao gravar: " + res.error.message, "err"); return; }
+      if (res.error) { toastScan("Erro ao gravar: " + res.error.message, "err"); return; }
       item[cfg.campo] = novoValor;
       var ficouCompleto = novoValor >= item.qtd;
 
@@ -1230,10 +1258,10 @@
       renderItensFase(pedido.itens_pedido, fase);
       var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
       if (allDone) {
-        toast(escapeHtml(item.produtos.nome) + " ✓ último item — concluindo pedido...", "ok");
+        toastScan(escapeHtml(item.produtos.nome) + " ✓ último item — concluindo pedido...", "ok");
         concluirFase(pedido, fase);
       } else {
-        toast(escapeHtml(item.produtos.nome) + " ✓ " + novoValor + "/" + item.qtd, "ok");
+        toastScan(escapeHtml(item.produtos.nome) + " ✓ " + novoValor + "/" + item.qtd, "ok");
       }
     });
   }
@@ -1270,7 +1298,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (input.value.trim()) beep();
+          destravarAudio();
           handleScanExpedicao(input.value.trim());
           input.value = "";
         }
@@ -1304,9 +1332,9 @@
         return achado || null;
       });
     }).then(function (pedido) {
-      if (!pedido) { toast("Pedido \"" + code + "\" não está na fila de expedição", "err"); return; }
+      if (!pedido) { toastScan("Pedido \"" + code + "\" não está na fila de expedição", "err"); return; }
       fecharCamera();
-      toast("Pedido " + pedido.id_externo + " expedido ✓", "ok");
+      toastScan("Pedido " + pedido.id_externo + " expedido ✓", "ok");
       sb.from("pedidos").update({ status: "expedido" }).eq("id", pedido.id).then(function (r) {
         if (r.error) { toast("Erro: " + r.error.message, "err"); return; }
         carregarFilaExpedicao();
