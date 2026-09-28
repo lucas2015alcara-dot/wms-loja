@@ -427,6 +427,19 @@
   }
   // ---------------- SOM DE BIPE (feedback sonoro enquanto não temos leitor/coletora dedicados) ----------------
   var beepCtx = null;
+  // Navegadores só deixam tocar áudio se ele começar dentro de um toque do usuário.
+  // Como a câmera detecta o código sozinha (sem toque naquele instante), "destravamos"
+  // o áudio assim que o usuário toca em algo que vai levar a uma leitura (botão da câmera,
+  // foco no campo de bipagem). Depois disso, o navegador deixa tocar som mesmo em
+  // callbacks assíncronos, como o da câmera.
+  function destravarAudio() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!beepCtx) beepCtx = new Ctx();
+      if (beepCtx.state === "suspended") beepCtx.resume();
+    } catch (e) { /* ignora */ }
+  }
   function beep() {
     try {
       var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -461,6 +474,7 @@
   var camLastTime = 0;
 
   function abrirCamera(onDetect) {
+    destravarAudio();
     if (typeof Html5Qrcode === "undefined") { toast("Leitor de câmera não carregou. Verifique a internet.", "err"); return; }
     camOnDetect = onDetect;
     camLastCode = ""; camLastTime = 0;
@@ -990,7 +1004,10 @@
     var camBtn = document.getElementById("embScanCamBtn");
     if (camBtn) {
       camBtn.onclick = function () {
-        abrirCamera(function (code) { buscarPedidosPorItemEmbalagem(code); });
+        abrirCamera(function (code) {
+          fecharCamera(); // fecha assim que lê, sem esperar a busca no banco
+          buscarPedidosPorItemEmbalagem(code);
+        });
       };
     }
   }
