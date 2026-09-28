@@ -425,6 +425,26 @@
       camStatusEl.style.color = kind === "err" ? "#e2544f" : kind === "ok" ? "#4caf6d" : "";
     }
   }
+  // ---------------- SOM DE BIPE (feedback sonoro enquanto não temos leitor/coletora dedicados) ----------------
+  var beepCtx = null;
+  function beep() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!beepCtx) beepCtx = new Ctx();
+      if (beepCtx.state === "suspended") beepCtx.resume();
+      var osc = beepCtx.createOscillator();
+      var gain = beepCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 1800;
+      gain.gain.setValueAtTime(0.001, beepCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, beepCtx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepCtx.currentTime + 0.13);
+      osc.connect(gain).connect(beepCtx.destination);
+      osc.start();
+      osc.stop(beepCtx.currentTime + 0.14);
+    } catch (e) { /* áudio bloqueado pelo navegador — ignora */ }
+  }
   function escapeHtml(s) {
     return (s || "").toString().replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -457,6 +477,7 @@
       if (decodedText === camLastCode && (agora - camLastTime) < 1500) return; // evita ler o mesmo código 2x seguidas
       camLastCode = decodedText; camLastTime = agora;
       if (navigator.vibrate) navigator.vibrate(80);
+      beep();
       document.getElementById("camStatus").textContent = "Lido: " + decodedText;
       if (camOnDetect) camOnDetect(decodedText);
     }, function () { /* erro de leitura de frame, ignora — é contínuo */ }).catch(function (err) {
@@ -869,6 +890,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
+          if (input.value.trim()) beep();
           handleScanLote(input.value.trim());
           input.value = "";
         }
@@ -959,6 +981,7 @@
       input.onkeydown = function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
+          if (input.value.trim()) beep();
           buscarPedidosPorItemEmbalagem(input.value.trim());
           input.value = "";
         }
@@ -975,6 +998,7 @@
   function buscarPedidosPorItemEmbalagem(codigo) {
     if (!codigo) return;
     sb.from("produtos").select("id,sku,nome").eq("sku", codigo).maybeSingle().then(function (resProd) {
+      fecharCamera();
       var el = document.getElementById("embFila");
       if (resProd.error || !resProd.data) {
         el.innerHTML = '<div class="empty">Nenhum produto com esse SKU.</div>';
@@ -1062,6 +1086,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
+          if (input.value.trim()) beep();
           handleScan(pedido, input.value.trim(), fase);
           input.value = "";
         }
@@ -1228,6 +1253,7 @@
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
+          if (input.value.trim()) beep();
           handleScanExpedicao(input.value.trim());
           input.value = "";
         }
