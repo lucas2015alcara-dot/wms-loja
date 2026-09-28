@@ -131,11 +131,13 @@
     var st = document.getElementById("status");
     Promise.all([
       sb.rpc("contagem_pedidos"),
-      sb.rpc("contagem_pendencias")
+      sb.rpc("contagem_pendencias"),
+      sb.rpc("contagem_expedidos_hoje")
     ]).then(function (results) {
       var pedidosRes = results[0];
       var pendRes = results[1];
-      if (pedidosRes.error || pendRes.error) {
+      var expHojeRes = results[2];
+      if (pedidosRes.error || pendRes.error || expHojeRes.error) {
         st.textContent = "erro ao atualizar — tentando de novo…";
         st.className = "err";
         return;
@@ -147,7 +149,7 @@
       (pedidosRes.data || []).forEach(function (r) { kv[r.status] = r.total; });
       setNum("nWait", kv.a_separar);
       setNum("nEmb", kv.separado);
-      setNum("nExp", kv.expedido);
+      setNum("nExp", expHojeRes.data || 0); // só os expedidos hoje (horário de Brasília)
 
       var pend = pendRes.data || 0;
       setNum("nPend", pend);
