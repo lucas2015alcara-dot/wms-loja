@@ -278,13 +278,25 @@
       </div>
       <div class="card">
         <h2>Adicionar / transferir estoque</h2>
-        <label>SKU do produto</label>
-        <input type="text" id="trfSku" placeholder="SKU">
+        <label>Produto</label>
+        <div class="row" style="align-items:stretch">
+          <input type="text" id="trfSku" class="mono" placeholder="bipe ou digite o SKU" autocomplete="off" autocapitalize="off">
+          <button class="btn primary" id="trfSkuCam" style="flex:0 0 56px" title="Ler com a câmera">📷</button>
+        </div>
+        <div class="scan-hint" id="trfProdutoNome" style="font-size:13px; margin-top:6px">&nbsp;</div>
         <label>Endereço de origem (deixe em branco se for entrada nova)</label>
+        <div class="row" style="align-items:stretch; margin-bottom:6px">
+          <input type="text" id="trfOrigemBipe" class="mono" placeholder="bipe o endereço de origem" autocomplete="off" autocapitalize="off">
+          <button class="btn primary" id="trfOrigemCam" style="flex:0 0 56px" title="Ler com a câmera">📷</button>
+        </div>
         <select id="trfOrigem" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px">
           <option value="">— nenhum (entrada nova) —</option>
         </select>
         <label>Endereço de destino</label>
+        <div class="row" style="align-items:stretch; margin-bottom:6px">
+          <input type="text" id="trfDestinoBipe" class="mono" placeholder="bipe o endereço de destino" autocomplete="off" autocapitalize="off">
+          <button class="btn primary" id="trfDestinoCam" style="flex:0 0 56px" title="Ler com a câmera">📷</button>
+        </div>
         <select id="trfDestino" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px"></select>
         <label>Quantidade</label>
         <input type="number" id="trfQtd" min="1" value="1">
@@ -499,6 +511,18 @@
   var camLastCode = "";
   var camLastTime = 0;
 
+  // Decide se uma leitura da câmera conta. Todas as unidades de um SKU têm o mesmo código de
+  // barras, então a mesma caixa parada na frente da câmera não pode contar de novo: um código
+  // só é aceito outra vez depois de ficar CAM_AUSENCIA_MS sem aparecer em nenhuma imagem.
+  // (Antes era "ignora por 1,5 s" — uma caixa parada por 4 s contava 3 vezes.)
+  var CAM_AUSENCIA_MS = 1000;
+  function camAceitaLeitura(codigo, agora) {
+    var repetido = codigo === camLastCode && (agora - camLastTime) < CAM_AUSENCIA_MS;
+    camLastCode = codigo;
+    camLastTime = agora; // renova a cada imagem em que o código aparece, aceita ou não
+    return !repetido;
+  }
+
   function abrirCamera(onDetect) {
     destravarAudio();
     if (typeof Html5Qrcode === "undefined") { toast("Leitor de câmera não carregou. Verifique a internet.", "err"); return; }
@@ -513,11 +537,9 @@
       Html5QrcodeSupportedFormats.QR_CODE
     ] };
     camInstance.start({ facingMode: "environment" }, config, function (decodedText) {
-      var agora = Date.now();
-      if (decodedText === camLastCode && (agora - camLastTime) < 1500) return; // evita ler o mesmo código 2x seguidas
-      camLastCode = decodedText; camLastTime = agora;
+      if (!camAceitaLeitura(decodedText, Date.now())) return;
       if (navigator.vibrate) navigator.vibrate(80);
-      document.getElementById("camStatus").textContent = "Lido: " + decodedText;
+      document.getElementById("camStatus").textContent = "Lido: " + decodedText + " — afaste o item para ler o próximo";
       if (camOnDetect) camOnDetect(decodedText);
     }, function () { /* erro de leitura de frame, ignora — é contínuo */ }).catch(function (err) {
       document.getElementById("camStatus").textContent = "Não foi possível abrir a câmera. Verifique a permissão do navegador.";
@@ -1355,7 +1377,80 @@
       endWired = true;
       document.getElementById("endCriar").addEventListener("click", criarEndereco);
       document.getElementById("trfSalvar").addEventListener("click", salvarTransferencia);
+      ligarBipeTransferencia();
     }
+  }
+
+  // ---------- bipagem na transferência: produto → origem (opcional) → destino → quantidade ----------
+  var trfEnderecos = [];
+
+  function ligarBipeTransferencia() {
+    function ligar(inputId, camId, fn) {
+      var inp = document.getElementById(inputId);
+      inp.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); destravarAudio(); fn(inp.value); }
+      });
+      document.getElementById(camId).addEventListener("click", function () {
+        abrirCamera(function (code) { fecharCamera(); fn(code); });
+      });
+    }
+    ligar("trfSku", "trfSkuCam", trfBiparProduto);
+    ligar("trfOrigemBipe", "trfOrigemCam", function (c) { trfBiparEndereco(c, "Origem"); });
+    ligar("trfDestinoBipe", "trfDestinoCam", function (c) { trfBiparEndereco(c, "Destino"); });
+    // escolher na lista também atualiza o campo de bipagem, pra tela não mostrar duas coisas diferentes
+    ["Origem", "Destino"].forEach(function (qual) {
+      var sel = document.getElementById("trf" + qual);
+      sel.addEventListener("change", function () {
+        var e = trfEnderecos.find(function (x) { return x.id === sel.value; });
+        document.getElementById("trf" + qual + "Bipe").value = e ? e.codigo : "";
+      });
+    });
+    document.getElementById("trfQtd").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); salvarTransferencia(); }
+    });
+    // digitou outro SKU à mão: o nome confirmado antes deixa de valer
+    document.getElementById("trfSku").addEventListener("input", function () {
+      document.getElementById("trfProdutoNome").innerHTML = "&nbsp;";
+    });
+  }
+
+  function trfBiparProduto(codigo) {
+    codigo = (codigo || "").toString().trim();
+    if (!codigo) return;
+    var alvo = normalizarCodigo(codigo);
+    var nomeEl = document.getElementById("trfProdutoNome");
+    sb.from("produtos").select("id,sku,nome").then(function (res) {
+      var p = (res.data || []).find(function (x) { return normalizarCodigo(x.sku) === alvo; });
+      if (!p) {
+        document.getElementById("trfSku").value = codigo;
+        nomeEl.textContent = "✗ SKU não cadastrado";
+        nomeEl.style.color = "#e2544f";
+        toastScan("SKU \"" + codigo + "\" não encontrado nos produtos cadastrados", "err");
+        return;
+      }
+      document.getElementById("trfSku").value = p.sku; // grava o SKU como está cadastrado (com zeros à esquerda)
+      nomeEl.textContent = "✓ " + p.nome;
+      nomeEl.style.color = "#4caf6d";
+      toastScan("Produto: " + p.nome, "ok");
+      document.getElementById("trfDestinoBipe").focus();
+    });
+  }
+
+  function trfBiparEndereco(codigo, qual) {
+    codigo = (codigo || "").toString().trim();
+    if (!codigo) return;
+    var alvo = normalizarCodigo(codigo);
+    var e = trfEnderecos.find(function (x) { return normalizarCodigo(x.codigo) === alvo; });
+    var input = document.getElementById("trf" + qual + "Bipe");
+    if (!e) {
+      input.value = "";
+      toastScan("Endereço \"" + codigo + "\" não cadastrado", "err");
+      return;
+    }
+    document.getElementById("trf" + qual).value = e.id;
+    input.value = e.codigo;
+    toastScan("📍 " + qual + ": " + e.codigo, "ok");
+    document.getElementById(qual === "Origem" ? "trfDestinoBipe" : "trfQtd").focus();
   }
 
   function criarEndereco() {
@@ -1372,6 +1467,9 @@
   function carregarSelectsEndereco() {
     sb.from("enderecos").select("id,codigo").eq("ativo", true).order("codigo").then(function (res) {
       var lista = res.data || [];
+      trfEnderecos = lista;
+      document.getElementById("trfOrigemBipe").value = "";
+      document.getElementById("trfDestinoBipe").value = "";
       var origem = document.getElementById("trfOrigem");
       var destino = document.getElementById("trfDestino");
       origem.innerHTML = '<option value="">— nenhum (entrada nova) —</option>';
@@ -1409,7 +1507,9 @@
       }
       toast("Estoque atualizado ✓", "ok");
       document.getElementById("trfSku").value = "";
+      document.getElementById("trfProdutoNome").innerHTML = "&nbsp;";
       document.getElementById("trfQtd").value = "1";
+      document.getElementById("trfSku").focus(); // endereços ficam: guardar vários produtos no mesmo lugar fica rápido
       carregarListaEstoqueEnderecos();
     }).catch(function (err) {
       toast("Erro: " + (err.message || err), "err");
