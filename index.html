@@ -342,12 +342,17 @@
       <div class="card">
         <h2>Contagem de inventário</h2>
         <label>Endereço a contar</label>
+        <div class="row" style="align-items:stretch; margin-bottom:6px">
+          <input type="text" id="invEnderecoBipe" class="mono" placeholder="bipe o endereço" autocomplete="off" autocapitalize="off">
+          <button class="btn primary" id="invEnderecoCam" style="flex:0 0 56px" title="Ler com a câmera">📷</button>
+        </div>
         <select id="invEndereco" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px">
           <option value="">— escolha um endereço —</option>
         </select>
         <div id="invLista" style="margin-top:12px"></div>
         <div class="row" style="margin-top:6px">
-          <input type="text" id="invNovoSku" placeholder="SKU não listado (opcional)">
+          <input type="text" id="invNovoSku" class="mono" placeholder="SKU não listado" autocomplete="off" autocapitalize="off">
+          <button class="btn primary" id="invNovoSkuCam" style="flex:0 0 56px" title="Ler com a câmera">📷</button>
           <button class="btn ghost" id="invAdicionarSku" style="max-width:120px">+ adicionar</button>
         </div>
         <button class="btn primary" id="invSalvar" style="width:100%; margin-top:14px; display:none">Salvar contagem</button>
@@ -1692,8 +1697,29 @@
       document.getElementById("invEndereco").addEventListener("change", carregarItensInventario);
       document.getElementById("invAdicionarSku").addEventListener("click", adicionarSkuInventario);
       document.getElementById("invSalvar").addEventListener("click", salvarInventario);
+      // bipar o endereço (leitor ou câmera) em vez de procurar na lista
+      var bipe = document.getElementById("invEnderecoBipe");
+      bipe.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); destravarAudio(); invBiparEndereco(bipe.value); }
+      });
+      document.getElementById("invEnderecoCam").addEventListener("click", function () {
+        abrirCamera(function (code) { fecharCamera(); invBiparEndereco(code); });
+      });
+      document.getElementById("invEndereco").addEventListener("change", function () {
+        var e = invEnderecos.find(function (x) { return x.id === document.getElementById("invEndereco").value; });
+        bipe.value = e ? e.codigo : "";
+      });
+      // SKU não listado: Enter ou câmera já adicionam
+      var novoSku = document.getElementById("invNovoSku");
+      novoSku.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); adicionarSkuInventario(); }
+      });
+      document.getElementById("invNovoSkuCam").addEventListener("click", function () {
+        abrirCamera(function (code) { fecharCamera(); novoSku.value = code; adicionarSkuInventario(); });
+      });
     }
     sb.from("enderecos").select("id,codigo").eq("ativo", true).order("codigo").then(function (res) {
+      invEnderecos = res.data || [];
       var sel = document.getElementById("invEndereco");
       var atual = sel.value;
       sel.innerHTML = '<option value="">— escolha um endereço —</option>';
@@ -1702,6 +1728,26 @@
       });
       if (atual) sel.value = atual;
     });
+  }
+
+  var invEnderecos = [];
+  function invBiparEndereco(codigo) {
+    codigo = (codigo || "").toString().trim();
+    if (!codigo) return;
+    var alvo = normalizarCodigo(codigo);
+    var e = invEnderecos.find(function (x) { return normalizarCodigo(x.codigo) === alvo; });
+    var bipe = document.getElementById("invEnderecoBipe");
+    if (!e) {
+      // continua no endereço que já estava sendo contado (se houver)
+      var atual = invEnderecos.find(function (x) { return x.id === document.getElementById("invEndereco").value; });
+      bipe.value = atual ? atual.codigo : "";
+      toastScan("Endereço \"" + codigo + "\" não cadastrado", "err");
+      return;
+    }
+    bipe.value = e.codigo;
+    document.getElementById("invEndereco").value = e.id;
+    toastScan("📍 Contando: " + e.codigo, "ok");
+    carregarItensInventario();
   }
 
   function carregarItensInventario() {
