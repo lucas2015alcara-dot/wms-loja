@@ -88,21 +88,27 @@
   .item-line:last-child { border-bottom: none; }
   .item-line button.rm { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 2px 6px; }
 
-  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
   .badge.wait { background: #3a3020; color: var(--accent); }
   .badge.sep { background: #1e3546; color: var(--blue); }
   .badge.emb { background: #21382b; color: var(--green); }
   .badge.exp { background: #2a2a2a; color: var(--text-dim); }
 
   .order-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; }
-  .order-row .oid { font-weight: 700; font-size: 14px; }
-  .order-row .meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .order-row .oid { font-weight: 700; font-size: 17px; }
+  .order-row .meta { font-size: 14px; color: var(--text-dim); margin-top: 3px; }
+  .order-row .meta.mono { color: var(--text); opacity: 0.85; }
 
   .empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 30px 10px; }
 
   .scan-box { background: var(--surface-2); border: 2px solid var(--accent); border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 14px; }
-  .scan-box input { text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 18px; }
-  .scan-hint { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+  .scan-box input { text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 20px; }
+  .scan-box input::placeholder { font-size: 15px; }
+  .scan-hint { font-size: 12.5px; color: var(--text-dim); margin-top: 8px; }
+  /* endereço ativo na separação: precisa ser lido de relance */
+  #endAtivo_sep, #loteEnderecoHint { font-size: 17px; color: var(--text); }
+  /* título das telas de operação: nº do pedido ou SKU do lote */
+  .op-title { font-size: 19px; color: var(--text); font-weight: 700; }
   .btn-camera { margin-top: 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
   #cameraModal { display: none; position: fixed; inset: 0; background: #000; z-index: 100; flex-direction: column; }
@@ -111,16 +117,16 @@
   #cameraModal .camTop span { color: #fff; font-size: 13px; font-weight: 600; }
   #cameraModal .camTop button { background: none; border: 1px solid #444; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
   #camReader { flex: 1; }
-  #camStatus { color: var(--accent); text-align: center; font-size: 13px; padding: 10px; min-height: 18px; background: #000; }
+  #camStatus { color: var(--accent); text-align: center; font-size: 16px; padding: 10px; min-height: 18px; background: #000; }
 
   .pick-item { padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--line); background: var(--surface-2); }
   .pick-item.done { border-color: var(--green); background: #1a2620; }
   .pick-item .top { display: flex; justify-content: space-between; align-items: center; }
-  .pick-item .name { font-size: 13.5px; font-weight: 600; }
-  .pick-item .sku { font-size: 11.5px; color: var(--text-dim); }
-  .pick-item .qty { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .pick-item .name { font-size: 17px; font-weight: 600; }
+  .pick-item .sku { font-size: 15px; color: var(--text); opacity: 0.85; margin-top: 3px; line-height: 1.4; }
+  .pick-item .qty { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; white-space: nowrap; }
   .pick-item .qty .done-c { color: var(--green); }
-  .pick-item .alerta-btn { margin-top: 8px; font-size: 11px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-family: inherit; }
+  .pick-item .alerta-btn { margin-top: 8px; font-size: 13px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-family: inherit; }
   .alerta-tag { font-size: 11px; color: var(--red); margin-top: 6px; }
 
   .kanban { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
@@ -137,7 +143,7 @@
   @media (max-width: 640px) { .kanban { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 420px) { .kanban { grid-template-columns: repeat(2, 1fr); } }
 
-  .toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line); color: var(--text); padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+  .toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line); color: var(--text); padding: 10px 18px; border-radius: 20px; font-size: 15px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
   .toast.show { opacity: 1; }
   .toast.ok { border-color: var(--green); color: var(--green); }
   .toast.err { border-color: var(--red); color: var(--red); }
@@ -247,7 +253,7 @@
       <div class="card" id="embSelectCard">
         <h2>Bipe o item pra começar a embalar</h2>
         <div class="scan-box">
-          <input type="text" id="embScanSku" class="mono" placeholder="bipe ou digite o SKU do produto" autocomplete="off" autocapitalize="off">
+          <input type="text" id="embScanSku" class="mono" placeholder="bipe o SKU do produto" autocomplete="off" autocapitalize="off">
           <button class="btn primary btn-camera" id="embScanCamBtn">📷 Usar câmera do celular</button>
           <div class="scan-hint">Bipe qualquer item que você pegou na mesa — o sistema mostra a quais pedidos ele pode pertencer.</div>
         </div>
@@ -260,7 +266,7 @@
       <div class="card">
         <h2>Bipar pedido pra expedir</h2>
         <div class="scan-box">
-          <input type="text" id="scanInputExp" class="mono" placeholder="bipe ou digite o código do pedido" autocomplete="off" autocapitalize="off">
+          <input type="text" id="scanInputExp" class="mono" placeholder="bipe o código do pedido" autocomplete="off" autocapitalize="off">
           <button class="btn primary btn-camera" id="btnCamExp">📷 Usar câmera do celular</button>
           <div class="scan-hint">Bipa a etiqueta do pedido (ML, Shopee, NF, etc.) — o pedido é expedido automaticamente se estiver na fila.</div>
         </div>
@@ -712,7 +718,7 @@
       var row = document.createElement("div");
       row.className = "item-line";
       row.innerHTML = '<span class="mono" style="min-width:26px">' + it.qtd + 'x</span>' +
-        '<span style="flex:1">' + escapeHtml(it.nome || it.sku) + '<br><span style="color:var(--text-dim);font-size:11px">' + escapeHtml(it.sku) + '</span></span>' +
+        '<span style="flex:1">' + escapeHtml(it.nome || it.sku) + '<br><span style="color:var(--text-dim);font-size:13px">' + escapeHtml(it.sku) + '</span></span>' +
         '<button class="rm" data-idx="' + idx + '" aria-label="remover">✕</button>';
       el.appendChild(row);
     });
@@ -932,7 +938,7 @@
       document.getElementById("sepSelectCard").style.display = "none";
       var wrap = document.getElementById("sepLoteAtivo");
       wrap.style.display = "";
-      var html = '<div class="card"><h2>' + escapeHtml(loteAtivo.sku) + ' — ' + escapeHtml(loteAtivo.nome) + '</h2>';
+      var html = '<div class="card"><h2 class="op-title"><span class="mono">' + escapeHtml(loteAtivo.sku) + '</span> — ' + escapeHtml(loteAtivo.nome) + '</h2>';
       html += '<div class="meta" style="margin-bottom:10px" id="loteContador">0/' + loteAtivo.total + ' confirmadas</div>';
       html += '<div class="scan-box">';
       html += '<div id="loteEnderecoHint" class="scan-hint" style="margin-bottom:8px; font-weight:600">📍 Bipe o endereço antes do produto</div>';
@@ -1133,7 +1139,7 @@
       enderecosCache = results[1].data || [];
       var wrap = document.getElementById(cfg.wrapId);
       var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
-      var html = '<div class="card"><h2>Pedido <span class="mono">' + escapeHtml(pedido.id_externo) + '</span></h2>';
+      var html = '<div class="card"><h2 class="op-title">Pedido <span class="mono">' + escapeHtml(pedido.id_externo) + '</span></h2>';
       html += '<div class="scan-box">';
       if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">📍 Bipe o endereço antes do produto</div>';
       html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
@@ -1205,7 +1211,8 @@
       if (!el) return;
       var lista = res.data || [];
       if (lista.length === 0) { el.textContent = "📍 sem endereço com estoque cadastrado"; return; }
-      el.textContent = "📍 " + lista.map(function (r) { return r.enderecos.codigo + " (" + r.quantidade + ")"; }).join(" · ");
+      // um endereço por linha, sem quebrar no meio do código (ex.: "Rua 01 - PP3 - A2")
+      el.innerHTML = lista.map(function (r) { return '<span style="white-space:nowrap">📍 ' + escapeHtml(r.enderecos.codigo) + " (" + r.quantidade + ")</span>"; }).join("<br>");
     });
   }
 
@@ -1549,7 +1556,7 @@
         var row = document.createElement("div");
         row.className = "order-row";
         row.style.cursor = "default";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + ' · ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + '</div><div class="meta" style="white-space:nowrap">📍 ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
         el.appendChild(row);
       });
     });
@@ -1928,7 +1935,7 @@
         var row = document.createElement("div");
         row.className = "order-row";
         row.style.cursor = "default";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + ' · ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(r.produtos.nome) + '</div><div class="meta mono">' + escapeHtml(r.produtos.sku) + '</div><div class="meta" style="white-space:nowrap">📍 ' + escapeHtml(r.enderecos.codigo) + '</div></div><span class="badge sep">' + r.quantidade + ' un.</span>';
         el.appendChild(row);
       });
     });
