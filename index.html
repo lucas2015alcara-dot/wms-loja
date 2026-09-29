@@ -946,6 +946,7 @@
       loteEnderecoAtivo = end;
       var hint = document.getElementById("loteEnderecoHint");
       if (hint) hint.textContent = "📍 Endereço ativo: " + end.codigo;
+      fecharCamera(); // libera a tela para o operador pegar o produto e abrir a câmera de novo
       toastScan("📍 Endereço ativo: " + end.codigo, "ok");
       return;
     }
@@ -1215,6 +1216,7 @@
       if (end) {
         sepEnderecoAtivo = end;
         atualizarEnderecoAtivoUI();
+        fecharCamera(); // libera a tela para o operador pegar o produto e abrir a câmera de novo
         toastScan("📍 Endereço ativo: " + end.codigo, "ok");
         return;
       }
