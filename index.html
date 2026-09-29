@@ -759,7 +759,7 @@
   function resolverProdutos(itens) {
     // Pra cada item, acha o produto pelo SKU ou cria se não existir. Retorna array de produto_id na mesma ordem.
     var promessas = itens.map(function (it) {
-      return sb.from("produtos").select("id").eq("sku", it.sku).maybeSingle().then(function (res) {
+      return buscarProdutoPorCodigo(it.sku).then(function (res) {
         if (res.data) return res.data.id;
         return sb.from("produtos").insert({ sku: it.sku, nome: it.nome || it.sku }).select().single().then(function (r2) {
           if (r2.error) throw r2.error;
@@ -1062,7 +1062,7 @@
 
   function buscarPedidosPorItemEmbalagem(codigo) {
     if (!codigo) return;
-    sb.from("produtos").select("id,sku,nome").eq("sku", codigo).maybeSingle().then(function (resProd) {
+    buscarProdutoPorCodigo(codigo).then(function (resProd) {
       fecharCamera();
       var el = document.getElementById("embFila");
       if (resProd.error || !resProd.data) {
@@ -1219,6 +1219,25 @@
     // lê um EAN-13 (com zero na frente) como UPC-A (sem o zero), ou vice-versa
     if (/^\d+$/.test(c)) { var s = c.replace(/^0+/, ""); return s === "" ? "0" : s; }
     return c;
+  }
+
+  // Acha um produto pelo código lido ou digitado, com a mesma regra da separação: ignora zeros à
+  // esquerda (a câmera lê o mesmo código de barras como EAN-13, com zero, ou UPC-A, sem zero) e
+  // maiúsculas/minúsculas. Devolve no formato do Supabase: { data: produto | null, error }.
+  function buscarProdutoPorCodigo(codigo) {
+    var bruto = (codigo || "").toString().trim();
+    var alvo = normalizarCodigo(bruto);
+    var consulta = sb.from("produtos").select("id,sku,nome");
+    if (/^\d+$/.test(bruto)) {
+      consulta = consulta.in("sku", [bruto, alvo, "0" + alvo, "00" + alvo]);
+    } else {
+      consulta = consulta.ilike("sku", bruto.replace(/[\\%_]/g, "\\$&"));
+    }
+    return consulta.then(function (res) {
+      if (res.error) return { data: null, error: res.error };
+      var p = (res.data || []).find(function (x) { return normalizarCodigo(x.sku) === alvo; });
+      return { data: p || null, error: null };
+    });
   }
 
   function atualizarEnderecoAtivoUI() {
@@ -1417,10 +1436,9 @@
   function trfBiparProduto(codigo) {
     codigo = (codigo || "").toString().trim();
     if (!codigo) return;
-    var alvo = normalizarCodigo(codigo);
     var nomeEl = document.getElementById("trfProdutoNome");
-    sb.from("produtos").select("id,sku,nome").then(function (res) {
-      var p = (res.data || []).find(function (x) { return normalizarCodigo(x.sku) === alvo; });
+    buscarProdutoPorCodigo(codigo).then(function (res) {
+      var p = res.data;
       if (!p) {
         document.getElementById("trfSku").value = codigo;
         nomeEl.textContent = "✗ SKU não cadastrado";
@@ -1492,7 +1510,7 @@
     if (qtd <= 0) { toast("Quantidade inválida", "err"); return; }
     var btn = document.getElementById("trfSalvar");
     btn.disabled = true;
-    sb.from("produtos").select("id").eq("sku", sku).maybeSingle().then(function (res) {
+    buscarProdutoPorCodigo(sku).then(function (res) {
       if (res.error || !res.data) throw new Error("SKU \"" + sku + "\" não encontrado nos produtos cadastrados");
       return sb.rpc("transferir_estoque", {
         p_produto_id: res.data.id,
@@ -1558,7 +1576,7 @@
     var btn = document.getElementById("devRegistrar");
     btn.disabled = true;
 
-    sb.from("produtos").select("id").eq("sku", sku).maybeSingle().then(function (res) {
+    buscarProdutoPorCodigo(sku).then(function (res) {
       if (res.error || !res.data) throw new Error("SKU \"" + sku + "\" não encontrado nos produtos cadastrados");
       var produtoId = res.data.id;
       var achaPedido = idExterno
@@ -1726,7 +1744,7 @@
     if (invItensAtuais.some(function (it) { return normalizarCodigo(it.sku) === normalizarCodigo(sku); })) {
       toast("Esse SKU já está na lista", "err"); return;
     }
-    sb.from("produtos").select("id,sku,nome").eq("sku", sku).maybeSingle().then(function (res) {
+    buscarProdutoPorCodigo(sku).then(function (res) {
       if (res.error || !res.data) { toast("SKU não encontrado nos produtos cadastrados", "err"); return; }
       invItensAtuais.push({ produto_id: res.data.id, sku: res.data.sku, nome: res.data.nome, sistema: 0 });
       input.value = "";
