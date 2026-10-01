@@ -111,6 +111,18 @@
   .badge.sep { background: var(--badge-sep); color: var(--blue); }
   .badge.emb { background: var(--badge-emb); color: var(--green); }
   .badge.exp { background: var(--badge-exp); color: var(--text-dim); }
+  .badge.cancel { background: none; color: var(--red); border: 1px solid var(--red); }
+  .order-row .acoes { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  /* cancelamento de pedido (só admin) */
+  #cancelModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 150; align-items: center; justify-content: center; padding: 16px; }
+  #cancelModal.show { display: flex; }
+  #cancelModal .box { background: var(--surface); border: 1px solid var(--red); border-radius: 12px; padding: 18px; width: 100%; max-width: 440px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  #cancelModal h3 { margin: 0 0 4px; font-size: 19px; color: var(--red); }
+  #cancelModal .sub { font-size: 14px; color: var(--text-dim); margin-bottom: 8px; }
+  #cancelModal .aviso { font-size: 14px; color: var(--accent-ink); background: var(--badge-wait); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+  #cancelModal select { width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px; }
+  #cancelErr { color: var(--red); font-size: 13.5px; min-height: 18px; margin-top: 8px; }
 
   .order-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; }
   .order-row .oid { font-weight: 700; font-size: 17px; }
@@ -438,6 +450,38 @@
   </div>
 </div>
 
+<div id="cancelModal" role="dialog" aria-modal="true" aria-labelledby="cancelTitulo">
+  <div class="box">
+    <h3 id="cancelTitulo">Cancelar pedido</h3>
+    <div class="sub" id="cancelSub"></div>
+    <div id="cancelItens"></div>
+    <div class="aviso" id="cancelAvisoSep" style="display:none"></div>
+    <div id="cancelEndWrap" style="display:none">
+      <label for="cancelEndereco">Devolver as unidades já separadas para o endereço</label>
+      <select id="cancelEndereco"></select>
+    </div>
+    <label for="cancelMotivo">Motivo</label>
+    <select id="cancelMotivo">
+      <option value="">Escolha o motivo…</option>
+      <option>Pedido de teste</option>
+      <option>Cliente desistiu</option>
+      <option>Pedido duplicado</option>
+      <option>Cancelado no marketplace</option>
+      <option>Sem estoque</option>
+      <option>Outro</option>
+    </select>
+    <label for="cancelObs">Observação (obrigatória se for "Outro")</label>
+    <input type="text" id="cancelObs" maxlength="200" autocomplete="off">
+    <label for="cancelSenha">Sua senha de login, para confirmar</label>
+    <input type="password" id="cancelSenha" autocomplete="current-password">
+    <div id="cancelErr"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="cancelVoltar">Voltar</button>
+      <button class="btn danger" id="cancelConfirmar">Cancelar pedido</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div id="cameraModal">
@@ -535,8 +579,8 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function statusLabel(s) { return { a_separar: "A separar", separado: "Separado", embalado: "Embalado", expedido: "Expedido" }[s] || s; }
-  function statusBadge(s) { return { a_separar: "wait", separado: "sep", embalado: "emb", expedido: "exp" }[s] || ""; }
+  function statusLabel(s) { return { a_separar: "A separar", separado: "Separado", embalado: "Embalado", expedido: "Expedido", cancelado: "Cancelado" }[s] || s; }
+  function statusBadge(s) { return { a_separar: "wait", separado: "sep", embalado: "emb", expedido: "exp", cancelado: "cancel" }[s] || ""; }
   function canalLabel(c) { return { mercado_livre: "Mercado Livre", shopee: "Shopee", olist: "Olist", site_proprio: "Site próprio", outro: "Outro" }[c] || c; }
 
   // ---------------- CÂMERA (leitor de código de barras pelo celular) ----------------
@@ -844,6 +888,8 @@
         linhas.push(d.importados + " pedido(s) importado(s)");
         linhas.push(d.ja_existentes + " já existiam");
         if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem item válido");
+        if (d.cancelados_no_wms && d.cancelados_no_wms.length) linhas.push("cancelados no WMS (cancelados no Olist): " + d.cancelados_no_wms.join(", "));
+        if (d.avisos && d.avisos.length) linhas.push(d.avisos.join(" · "));
         if (d.produtos_cadastrados_automaticamente && d.produtos_cadastrados_automaticamente.length) linhas.push("produtos novos cadastrados: " + d.produtos_cadastrados_automaticamente.join("; "));
         out.textContent = linhas.join(" · ");
         toast(d.importados + " pedido(s) importado(s) do Olist.", "ok");
@@ -2050,7 +2096,7 @@
     }
 
     if (meu.papel === "admin") {
-      sb.from("pedidos").select("id_externo,canal,status,criado_em,itens_pedido(qtd)").order("criado_em", { ascending: false }).limit(50).then(function (res) {
+      sb.from("pedidos").select("id,id_externo,canal,status,criado_em,motivo_cancelamento,cancelado_em,itens_pedido(qtd)").order("criado_em", { ascending: false }).limit(50).then(function (res) {
         var el = document.getElementById("painelLista");
         el.innerHTML = "";
         var lista = res.data || [];
@@ -2060,13 +2106,124 @@
           var row = document.createElement("div");
           row.className = "order-row";
           row.style.cursor = "default";
-          row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><span class="badge ' + statusBadge(o.status) + '">' + statusLabel(o.status) + '</span>';
+          var meta = canalLabel(o.canal) + ' · ' + qtdTotal + ' un.';
+          if (o.status === "cancelado") {
+            meta += ' · ' + escapeHtml(o.motivo_cancelamento || "") + (o.cancelado_em ? ' (' + new Date(o.cancelado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + ')' : '');
+          }
+          var podeCancelar = o.status !== "cancelado" && o.status !== "expedido";
+          row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + meta + '</div></div>' +
+            '<div class="acoes">' + (podeCancelar ? '<button class="btn danger small" data-cancelar="' + o.id + '">Cancelar</button>' : '') +
+            '<span class="badge ' + statusBadge(o.status) + '">' + statusLabel(o.status) + '</span></div>';
           el.appendChild(row);
+        });
+        el.querySelectorAll("[data-cancelar]").forEach(function (btn) {
+          btn.addEventListener("click", function () { abrirCancelamento(btn.dataset.cancelar); });
         });
       });
     } else {
       document.getElementById("painelLista").innerHTML = '<div class="empty">Detalhes de todos os pedidos são visíveis só pro admin.</div>';
     }
+  }
+
+  // ---------------- CANCELAR PEDIDO (só admin, com senha) ----------------
+  var cancelPedido = null;
+  var cancelModal = document.getElementById("cancelModal");
+
+  function abrirCancelamento(pedidoId) {
+    if (!meu || meu.papel !== "admin") return;
+    sb.from("pedidos").select("id,id_externo,canal,status,itens_pedido(qtd,qtd_separada,produtos(sku,nome))").eq("id", pedidoId).single().then(function (res) {
+      if (res.error || !res.data) { toast("Não foi possível abrir o pedido.", "err"); return; }
+      var p = res.data;
+      if (p.status === "cancelado" || p.status === "expedido") { toast("Esse pedido não pode mais ser cancelado.", "err"); carregarPainel(); return; }
+      cancelPedido = p;
+      var itens = p.itens_pedido || [];
+      var separadas = itens.reduce(function (s, i) { return s + Math.max(0, i.qtd_separada || 0); }, 0);
+      document.getElementById("cancelTitulo").textContent = "Cancelar pedido " + p.id_externo;
+      document.getElementById("cancelSub").textContent = canalLabel(p.canal) + " · situação atual: " + statusLabel(p.status);
+      document.getElementById("cancelItens").innerHTML = itens.map(function (i) {
+        var pr = i.produtos || {};
+        return '<div class="item-line"><div style="flex:1">' + i.qtd + '× ' + escapeHtml(pr.nome || "") + ' <span class="mono" style="color:var(--text-dim)">' + skuTxt(pr.sku || "") + '</span></div>' +
+          (i.qtd_separada > 0 ? '<span class="badge sep">' + i.qtd_separada + ' separada(s)</span>' : '') + '</div>';
+      }).join("");
+      var aviso = document.getElementById("cancelAvisoSep");
+      var endWrap = document.getElementById("cancelEndWrap");
+      if (separadas > 0) {
+        aviso.style.display = "block";
+        aviso.textContent = "⚠️ " + separadas + " unidade(s) já saíram da prateleira. Devolva fisicamente ao endereço escolhido abaixo — o sistema soma de volta ao estoque.";
+        endWrap.style.display = "block";
+        sb.from("enderecos").select("id,codigo").eq("ativo", true).order("codigo").then(function (r) {
+          var sel = document.getElementById("cancelEndereco");
+          sel.innerHTML = '<option value="">Escolha o endereço…</option>' + (r.data || []).map(function (e) { return '<option value="' + e.id + '">' + escapeHtml(e.codigo) + '</option>'; }).join("");
+        });
+      } else {
+        aviso.style.display = "none";
+        endWrap.style.display = "none";
+      }
+      document.getElementById("cancelMotivo").value = "";
+      document.getElementById("cancelObs").value = "";
+      document.getElementById("cancelSenha").value = "";
+      document.getElementById("cancelErr").textContent = "";
+      document.getElementById("cancelConfirmar").disabled = false;
+      cancelModal.classList.add("show");
+      document.getElementById("cancelMotivo").focus();
+    });
+  }
+
+  function fecharCancelamento() {
+    cancelModal.classList.remove("show");
+    document.getElementById("cancelSenha").value = "";
+    cancelPedido = null;
+  }
+
+  document.getElementById("cancelVoltar").addEventListener("click", fecharCancelamento);
+  cancelModal.addEventListener("click", function (e) { if (e.target === cancelModal) fecharCancelamento(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && cancelModal.classList.contains("show")) fecharCancelamento(); });
+  document.getElementById("cancelSenha").addEventListener("keydown", function (e) { if (e.key === "Enter") confirmarCancelamento(); });
+  document.getElementById("cancelConfirmar").addEventListener("click", confirmarCancelamento);
+
+  var CANCEL_ERROS = {
+    senha_incorreta: "Senha incorreta.",
+    motivo_obrigatorio: "Informe o motivo.",
+    apenas_admin: "Só o admin pode cancelar pedidos.",
+    ja_cancelado: "Esse pedido já estava cancelado.",
+    ja_expedido: "Pedido já expedido — use Devoluções.",
+    informe_endereco_devolucao: "Escolha o endereço para devolver as unidades separadas.",
+    endereco_invalido: "Endereço inválido.",
+    pedido_nao_encontrado: "Pedido não encontrado."
+  };
+
+  function confirmarCancelamento() {
+    if (!cancelPedido) return;
+    var errEl = document.getElementById("cancelErr");
+    var motivoSel = document.getElementById("cancelMotivo").value;
+    var obs = document.getElementById("cancelObs").value.trim();
+    var senha = document.getElementById("cancelSenha").value;
+    var endWrap = document.getElementById("cancelEndWrap");
+    var endereco = endWrap.style.display !== "none" ? document.getElementById("cancelEndereco").value : "";
+    errEl.textContent = "";
+    if (!motivoSel) { errEl.textContent = "Escolha o motivo."; return; }
+    if (motivoSel === "Outro" && obs.length < 3) { errEl.textContent = "Descreva o motivo na observação."; return; }
+    if (endWrap.style.display !== "none" && !endereco) { errEl.textContent = "Escolha o endereço de devolução."; return; }
+    if (!senha) { errEl.textContent = "Digite sua senha para confirmar."; return; }
+    var motivo = motivoSel === "Outro" ? obs : (obs ? motivoSel + " — " + obs : motivoSel);
+    var btn = document.getElementById("cancelConfirmar");
+    btn.disabled = true;
+    var idExt = cancelPedido.id_externo;
+    sb.rpc("cancelar_pedido", { p_pedido_id: cancelPedido.id, p_motivo: motivo, p_senha: senha, p_endereco_devolucao: endereco || null }).then(function (res) {
+      btn.disabled = false;
+      if (res.error) {
+        var msg = res.error.message || "";
+        var chave = Object.keys(CANCEL_ERROS).filter(function (k) { return msg.indexOf(k) >= 0; })[0];
+        errEl.textContent = chave ? CANCEL_ERROS[chave] : "Não foi possível cancelar: " + msg;
+        if (chave === "senha_incorreta") { document.getElementById("cancelSenha").value = ""; document.getElementById("cancelSenha").focus(); }
+        return;
+      }
+      fecharCancelamento();
+      var d = res.data || {};
+      toast("Pedido " + idExt + " cancelado" + (d.unidades_devolvidas ? " · " + d.unidades_devolvidas + " un. devolvidas ao estoque" : "") + ".", "ok");
+      carregarPainel();
+      carregarContadores();
+    });
   }
 })();
 </script>
