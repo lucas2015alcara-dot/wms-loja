@@ -308,7 +308,7 @@
     </div>
 
     <div class="view" id="view-enderecos">
-      <div class="card">
+      <div class="card" id="cardNovoEndereco">
         <h2>Novo endereço</h2>
         <div class="row">
           <input type="text" id="endCodigo" placeholder='Ex: Rua 01 - PP-A3'>
@@ -367,7 +367,7 @@
         <input type="text" id="devObs" placeholder="Detalhes do motivo">
         <button class="btn primary" id="devRegistrar" style="margin-top:10px; width:100%">Registrar devolução</button>
       </div>
-      <div class="card">
+      <div class="card" id="cardDevPendentes">
         <h2>Pendentes de decisão</h2>
         <div id="devPendentes"></div>
       </div>
@@ -681,8 +681,11 @@
         document.getElementById("loginScreen").style.display = "none";
         document.getElementById("appShell").style.display = "flex";
         document.getElementById("hUser").textContent = meu.nome;
-        document.getElementById("hPapel").textContent = { admin: "Admin", separador: "Separador", embalador: "Embalador", expedicao: "Expedição" }[meu.papel] || meu.papel;
+        document.getElementById("hPapel").textContent = { admin: "Admin", operador: "Operador", separador: "Separador", embalador: "Embalador", expedicao: "Expedição" }[meu.papel] || meu.papel;
         document.getElementById("cardSyncOlist").style.display = meu.papel === "admin" ? "" : "none";
+        // operador usa Endereços e Devoluções, mas criar endereço e decidir devolução é do admin
+        document.getElementById("cardNovoEndereco").style.display = meu.papel === "admin" ? "" : "none";
+        document.getElementById("cardDevPendentes").style.display = meu.papel === "admin" ? "" : "none";
         montarNav();
         carregarContadores();
       });
@@ -706,6 +709,7 @@
   };
   var TABS = {
     admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"]],
+    operador: [["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["painel", "Painel"]],
     separador: [["separacao", "Separar"], ["painel", "Painel"]],
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
     expedicao: [["expedicao", "Expedir"], ["painel", "Painel"]]
@@ -715,6 +719,11 @@
       { label: "OPERAÇÃO", views: ["pedidos", "separacao", "embalagem", "expedicao"] },
       { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario", "relatorios"] },
       { label: "ADMIN", views: ["painel"] }
+    ],
+    operador: [
+      { label: "OPERAÇÃO", views: ["separacao", "embalagem", "expedicao"] },
+      { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario"] },
+      { label: "GERAL", views: ["painel"] }
     ]
   };
   function montarNav() {
