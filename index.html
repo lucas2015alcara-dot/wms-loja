@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
   :root {
     --bg: #101214; --surface: #191b1e; --surface-2: #212327; --line: #302c1a;
@@ -122,6 +123,35 @@
   #cancelModal .sub { font-size: 14px; color: var(--text-dim); margin-bottom: 8px; }
   #cancelModal .aviso { font-size: 14px; color: var(--accent-ink); background: var(--badge-wait); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
   #cancelModal select { width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px; }
+
+  /* documentos simulados da embalagem (etiqueta + nota) — sempre papel branco, como na térmica */
+  #docsModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 150; overflow-y: auto; padding: 16px; }
+  #docsModal.show { display: block; }
+  #docsModal .box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; max-width: 880px; margin: 0 auto; }
+  #docsModal h3 { margin: 0 0 4px; font-size: 19px; }
+  #docsModal .sub { font-size: 14px; color: var(--text-dim); margin-bottom: 12px; }
+  #docsPrint { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+  .doc { width: 100mm; min-height: 150mm; background: #fff; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, Helvetica, sans-serif; font-size: 11px; padding: 4mm; box-sizing: border-box; position: relative; overflow: hidden; border: 1px solid #999; }
+  .doc .marca { position: absolute; top: 45%; left: -10%; width: 120%; text-align: center; transform: rotate(-30deg); font-size: 26px; font-weight: 800; color: rgba(200,0,0,0.16); pointer-events: none; letter-spacing: 2px; }
+  .doc .faixa { background: #000; color: #fff; text-align: center; font-weight: 700; font-size: 11px; padding: 3px; margin: -4mm -4mm 3mm; }
+  .doc .bloco { border: 1px solid #000; padding: 2mm; margin-bottom: 2mm; }
+  .doc .rot { font-size: 8.5px; font-weight: 700; text-transform: uppercase; }
+  .doc .grande { font-size: 15px; font-weight: 800; }
+  .doc .cb { text-align: center; }
+  .doc .cb svg { max-width: 100%; height: auto; }
+  .doc table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .doc th, .doc td { border-bottom: 1px solid #000; padding: 1.5mm 1mm; text-align: left; vertical-align: top; }
+  .doc td.q, .doc th.q { text-align: right; white-space: nowrap; }
+  .doc .rodape { font-size: 8.5px; margin-top: 2mm; }
+  @page { size: 100mm 150mm; margin: 0; }
+  @media print {
+    body * { visibility: hidden !important; }
+    #docsPrint, #docsPrint * { visibility: visible !important; }
+    #docsModal { position: absolute; inset: 0; background: #fff; padding: 0; overflow: visible; }
+    #docsModal .box { border: none; padding: 0; background: #fff; max-width: none; }
+    #docsPrint { position: absolute; left: 0; top: 0; display: block; }
+    .doc { border: none; width: 100mm; height: 150mm; page-break-after: always; break-after: page; }
+  }
   #cancelErr { color: var(--red); font-size: 13.5px; min-height: 18px; margin-top: 8px; }
 
   .order-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; }
@@ -447,6 +477,18 @@
       </div>
     </div>
   </main>
+  </div>
+</div>
+
+<div id="docsModal" role="dialog" aria-modal="true" aria-labelledby="docsTitulo">
+  <div class="box">
+    <h3 id="docsTitulo">Documentos do pedido</h3>
+    <div class="sub">Simulação: na integração real, a etiqueta da transportadora e a nota fiscal saem daqui automaticamente na impressora térmica, ao fim da conferência.</div>
+    <div id="docsPrint"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="docsFechar">Fechar</button>
+      <button class="btn primary" id="docsImprimir">🖨️ Imprimir etiqueta + nota</button>
+    </div>
   </div>
 </div>
 
@@ -1273,6 +1315,7 @@
       fecharCamera();
       toast("Pedido " + pedido.id_externo + " " + statusLabel(cfg.proximoStatus).toLowerCase() + " ✓", "ok");
       cfg.voltar();
+      if (fase === "emb") mostrarDocumentosSimulados(pedido);
     });
   }
 
@@ -2234,6 +2277,80 @@
       carregarContadores();
     });
   }
+
+  // ---------------- DOCUMENTOS SIMULADOS DA EMBALAGEM (etiqueta + nota) ----------------
+  // Só demonstração: nada aqui tem valor fiscal. Na integração real, etiqueta e NF vêm do marketplace/ERP.
+  var docsModal = document.getElementById("docsModal");
+
+  function rastreioSimulado(idExterno) {
+    var h = 0;
+    for (var i = 0; i < idExterno.length; i++) h = (h * 31 + idExterno.charCodeAt(i)) % 1000000000;
+    return "SIM" + String(h).padStart(9, "0") + "BR";
+  }
+
+  function mostrarDocumentosSimulados(pedido) {
+    var itens = pedido.itens_pedido || [];
+    var volumes = 1;
+    var totalUn = itens.reduce(function (s, i) { return s + i.qtd; }, 0);
+    var agora = new Date();
+    var dataTxt = agora.toLocaleDateString("pt-BR") + " " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    var rastreio = rastreioSimulado(pedido.id_externo);
+    var operador = meu ? meu.nome : "";
+    var linhas = itens.map(function (i) {
+      var p = i.produtos || {};
+      return '<tr><td>' + escapeHtml(p.sku || "") + '</td><td>' + escapeHtml(p.nome || "") + '</td><td class="q">' + i.qtd + '</td></tr>';
+    }).join("");
+
+    var etiqueta =
+      '<div class="doc">' +
+        '<div class="marca">SIMULAÇÃO</div>' +
+        '<div class="faixa">ETIQUETA DE ENVIO — SIMULAÇÃO</div>' +
+        '<div class="bloco"><div class="rot">Transportadora</div><div class="grande">Definida pelo canal (' + escapeHtml(canalLabel(pedido.canal)) + ')</div></div>' +
+        '<div class="bloco cb"><div class="rot">Código de rastreio (fictício)</div><svg id="docCbRastreio"></svg></div>' +
+        '<div class="bloco"><div class="rot">Destinatário</div><div style="font-size:13px; font-weight:700">Cliente do pedido ' + escapeHtml(pedido.id_externo) + '</div>' +
+          '<div>Nome, endereço e CEP vêm da integração com o marketplace.</div></div>' +
+        '<div class="bloco"><div class="rot">Remetente</div><div style="font-weight:700">PILCHS INFO</div><div>Expedição — galpão</div></div>' +
+        '<div class="bloco" style="display:flex; justify-content:space-between">' +
+          '<div><div class="rot">Pedido</div><div class="grande">' + escapeHtml(pedido.id_externo) + '</div></div>' +
+          '<div><div class="rot">Volume</div><div class="grande">' + volumes + '/' + volumes + '</div></div>' +
+          '<div><div class="rot">Itens</div><div class="grande">' + totalUn + ' un.</div></div>' +
+        '</div>' +
+        '<div class="rodape">Conferido por ' + escapeHtml(operador) + ' em ' + dataTxt + ' · documento de demonstração, sem validade para envio.</div>' +
+      '</div>';
+
+    var nota =
+      '<div class="doc">' +
+        '<div class="marca">SEM VALOR FISCAL</div>' +
+        '<div class="faixa">NOTA FISCAL (DANFE SIMPLIFICADO) — SIMULAÇÃO</div>' +
+        '<div class="bloco"><div class="rot">Emitente</div><div style="font-weight:700">PILCHS INFO</div><div>Dados fiscais preenchidos pelo ERP (Olist) na emissão real.</div></div>' +
+        '<div class="bloco" style="display:flex; justify-content:space-between">' +
+          '<div><div class="rot">Nº da nota</div><div style="font-weight:700">emitida pelo ERP</div></div>' +
+          '<div><div class="rot">Pedido</div><div style="font-weight:700">' + escapeHtml(pedido.id_externo) + '</div></div>' +
+          '<div><div class="rot">Data</div><div style="font-weight:700">' + agora.toLocaleDateString("pt-BR") + '</div></div>' +
+        '</div>' +
+        '<div class="bloco"><div class="rot">Destinatário</div><div>Cliente do pedido ' + escapeHtml(pedido.id_externo) + ' (dados da integração)</div></div>' +
+        '<div class="bloco"><div class="rot" style="margin-bottom:1mm">Produtos conferidos na embalagem</div>' +
+          '<table><thead><tr><th>SKU</th><th>Descrição</th><th class="q">Qtd</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+          '<div style="text-align:right; font-weight:700; margin-top:1.5mm">Total: ' + totalUn + ' un.</div></div>' +
+        '<div class="bloco cb"><div class="rot">Chave de acesso</div><div style="padding:2mm 0">gerada pela SEFAZ na emissão real</div></div>' +
+        '<div class="rodape">Demonstração do fluxo: conferência no WMS → nota e etiqueta impressas juntas no posto de embalagem.</div>' +
+      '</div>';
+
+    document.getElementById("docsTitulo").textContent = "Documentos do pedido " + pedido.id_externo;
+    document.getElementById("docsPrint").innerHTML = etiqueta + nota;
+    try {
+      if (window.JsBarcode) JsBarcode("#docCbRastreio", rastreio, { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 });
+      else throw new Error("sem JsBarcode");
+    } catch (e) {
+      document.getElementById("docCbRastreio").outerHTML = '<div class="grande" style="font-family:monospace">' + rastreio + '</div>';
+    }
+    docsModal.classList.add("show");
+    docsModal.scrollTop = 0;
+  }
+
+  document.getElementById("docsFechar").addEventListener("click", function () { docsModal.classList.remove("show"); });
+  document.getElementById("docsImprimir").addEventListener("click", function () { window.print(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && docsModal.classList.contains("show")) docsModal.classList.remove("show"); });
 })();
 </script>
 </body>
