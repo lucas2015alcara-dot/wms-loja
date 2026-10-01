@@ -1519,7 +1519,9 @@
       if (!res.error && res.data) return res.data;
       return sb.from("pedidos").select("id,id_externo").eq("status", "embalado").then(function (res2) {
         var alvo = normalizarCodigo(code);
-        var achado = (res2.data || []).find(function (p) { return normalizarCodigo(p.id_externo) === alvo; });
+        var rastreio = String(code).trim().toUpperCase();
+        // aceita também o código de rastreio da etiqueta simulada (SIM...BR)
+        var achado = (res2.data || []).find(function (p) { return normalizarCodigo(p.id_externo) === alvo || rastreioSimulado(p.id_externo) === rastreio; });
         return achado || null;
       });
     }).then(function (pedido) {
@@ -2310,6 +2312,7 @@
         '<div class="bloco"><div class="rot">Destinatário</div><div style="font-size:13px; font-weight:700">Cliente do pedido ' + escapeHtml(pedido.id_externo) + '</div>' +
           '<div>Nome, endereço e CEP vêm da integração com o marketplace.</div></div>' +
         '<div class="bloco"><div class="rot">Remetente</div><div style="font-weight:700">PILCHS INFO</div><div>Expedição — galpão</div></div>' +
+        '<div class="bloco cb"><div class="rot">Pedido — bipe este código na expedição</div><svg id="docCbPedido"></svg></div>' +
         '<div class="bloco" style="display:flex; justify-content:space-between">' +
           '<div><div class="rot">Pedido</div><div class="grande">' + escapeHtml(pedido.id_externo) + '</div></div>' +
           '<div><div class="rot">Volume</div><div class="grande">' + volumes + '/' + volumes + '</div></div>' +
@@ -2339,10 +2342,13 @@
     document.getElementById("docsTitulo").textContent = "Documentos do pedido " + pedido.id_externo;
     document.getElementById("docsPrint").innerHTML = etiqueta + nota;
     try {
-      if (window.JsBarcode) JsBarcode("#docCbRastreio", rastreio, { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 });
-      else throw new Error("sem JsBarcode");
+      if (!window.JsBarcode) throw new Error("sem JsBarcode");
+      JsBarcode("#docCbPedido", pedido.id_externo, { format: "CODE128", width: 2, height: 70, fontSize: 16, margin: 0 });
+      JsBarcode("#docCbRastreio", rastreio, { format: "CODE128", width: 1.6, height: 45, fontSize: 12, margin: 0 });
     } catch (e) {
-      document.getElementById("docCbRastreio").outerHTML = '<div class="grande" style="font-family:monospace">' + rastreio + '</div>';
+      var cp = document.getElementById("docCbPedido"), cr = document.getElementById("docCbRastreio");
+      if (cp) cp.outerHTML = '<div class="grande" style="font-family:monospace">' + escapeHtml(pedido.id_externo) + '</div>';
+      if (cr) cr.outerHTML = '<div class="grande" style="font-family:monospace">' + rastreio + '</div>';
     }
     docsModal.classList.add("show");
     docsModal.scrollTop = 0;
