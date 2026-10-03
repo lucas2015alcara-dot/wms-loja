@@ -153,6 +153,18 @@
     #docsPrint { position: absolute; left: 0; top: 0; display: block; }
     .doc { border: none; width: 100mm; height: 150mm; page-break-after: always; break-after: page; }
   }
+  .usr-row { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); margin-bottom: 8px; }
+  .usr-row.inativo { opacity: 0.6; }
+  .usr-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+  .usr-head .oid { font-weight: 700; font-size: 17px; }
+  .usr-head .meta { font-size: 13.5px; color: var(--text-dim); margin-top: 3px; word-break: break-all; }
+  .usr-edit { display: none; padding: 0 14px 14px; border-top: 1px dashed var(--line); }
+  .usr-row.aberto .usr-edit { display: block; }
+  .usr-msg { font-size: 13.5px; min-height: 18px; margin-top: 8px; }
+  .usr-select { width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px 12px; font-family:inherit; font-size:15px; }
+  .badge.admin { background: var(--badge-wait); color: var(--accent-ink); }
+  .badge.oper { background: var(--badge-sep); color: var(--blue); }
+  .badge.off { background: none; color: var(--red); border: 1px solid var(--red); }
   #cancelErr { color: var(--red); font-size: 13.5px; min-height: 18px; margin-top: 8px; }
 
   .order-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; }
@@ -461,6 +473,34 @@
       </div>
     </div>
 
+    <div class="view" id="view-usuarios">
+      <div class="card">
+        <h2>Novo login</h2>
+        <label for="usrNome">Nome</label>
+        <input type="text" id="usrNome" autocomplete="off" placeholder="Ex: Maria Souza">
+        <label for="usrEmail">E-mail (é o login)</label>
+        <input type="email" id="usrEmail" autocomplete="off" autocapitalize="off" placeholder="Ex: maria.wms@pilchsinfo.com.br">
+        <div class="scan-hint" style="text-align:left">Não precisa ser um e-mail que recebe mensagens: só serve como login.</div>
+        <label for="usrPapel">Papel</label>
+        <select id="usrPapel" class="usr-select">
+          <option value="operador">Operador — separa, embala, expede e mexe no estoque</option>
+          <option value="admin">Admin — tudo, inclusive cancelar pedidos e gerenciar logins</option>
+        </select>
+        <label for="usrSenha">Senha (mínimo 8 caracteres)</label>
+        <div class="row">
+          <input type="text" id="usrSenha" class="mono" autocomplete="off" autocapitalize="off">
+          <button class="btn ghost" id="usrGerar" style="flex:0 0 auto">Gerar</button>
+        </div>
+        <button class="btn primary" id="usrCriar" style="margin-top:12px; width:100%">Criar login</button>
+        <div class="usr-msg" id="usrMsgNovo"></div>
+      </div>
+      <div class="card">
+        <h2>Logins</h2>
+        <div class="scan-hint" style="text-align:left; margin:0 0 10px">Toque num login para trocar nome, papel ou senha, ou para desativar. Anote toda senha nova no gerenciador de senhas.</div>
+        <div id="usrLista"></div>
+      </div>
+    </div>
+
     <div class="view" id="view-painel">
       <div class="kanban">
         <div class="kcol wait"><div class="ic">🕒</div><div class="n mono" id="kWait">0</div><div class="l">A separar</div></div>
@@ -719,8 +759,13 @@
     sb.auth.getUser().then(function (r) {
       var user = r.data.user;
       if (!user) return;
-      sb.from("perfis").select("id,nome,papel").eq("id", user.id).single().then(function (res) {
+      sb.from("perfis").select("id,nome,papel,ativo").eq("id", user.id).single().then(function (res) {
         if (res.error || !res.data) { toast("Não foi possível carregar seu perfil.", "err"); return; }
+        if (res.data.ativo === false) {
+          sb.auth.signOut();
+          document.getElementById("loginErr").textContent = "Este login está desativado. Fale com o admin.";
+          return;
+        }
         meu = res.data;
         document.getElementById("loginScreen").style.display = "none";
         document.getElementById("appShell").style.display = "flex";
@@ -748,11 +793,12 @@
     enderecos: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
     devolucoes: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
     inventario: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    usuarios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c3 .2 5.5 2.3 5.5 5.8"/></svg>',
     relatorios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 3 3 5-7"/></svg>',
     painel: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.5 8.5 15 12l3.5 3.5"/><path d="M8 7v10l-4-5Z"/></svg>'
   };
   var TABS = {
-    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"]],
+    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"], ["usuarios", "Usuários"]],
     operador: [["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["painel", "Painel"]],
     separador: [["separacao", "Separar"], ["painel", "Painel"]],
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
@@ -762,7 +808,7 @@
     admin: [
       { label: "OPERAÇÃO", views: ["pedidos", "separacao", "embalagem", "expedicao"] },
       { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario", "relatorios"] },
-      { label: "ADMIN", views: ["painel"] }
+      { label: "ADMIN", views: ["painel", "usuarios"] }
     ],
     operador: [
       { label: "OPERAÇÃO", views: ["separacao", "embalagem", "expedicao"] },
@@ -812,6 +858,7 @@
     if (name === "devolucoes") carregarDevolucoes();
     if (name === "inventario") carregarInventario();
     if (name === "relatorios") carregarRelatorios();
+    if (name === "usuarios") carregarUsuarios();
     if (name === "painel") carregarPainel();
     carregarContadores();
   }
@@ -2359,6 +2406,136 @@
   document.getElementById("docsFechar").addEventListener("click", function () { docsModal.classList.remove("show"); });
   document.getElementById("docsImprimir").addEventListener("click", function () { window.print(); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && docsModal.classList.contains("show")) docsModal.classList.remove("show"); });
+
+  // ---------------- USUÁRIOS (só admin) ----------------
+  var usrWired = false;
+  var USR_PALAVRAS = ["Caixa", "Palete", "Etiqueta", "Galpao", "Lote", "Rua", "Fita", "Volume", "Pedido", "Doca"];
+
+  function gerarSenha() {
+    var n = new Uint32Array(3);
+    (window.crypto || window.msCrypto).getRandomValues(n);
+    return USR_PALAVRAS[n[0] % USR_PALAVRAS.length] + "-" + (1000 + (n[1] % 9000)) + "-" + USR_PALAVRAS[n[2] % USR_PALAVRAS.length];
+  }
+
+  function chamarUsuarios(payload) {
+    return sb.functions.invoke("gerenciar-usuarios", { method: "POST", body: payload }).then(function (res) {
+      if (!res.error) return res.data || {};
+      var ctx = res.error.context;
+      if (ctx && typeof ctx.json === "function") {
+        return ctx.json().then(function (j) { return { error: (j && j.error) || res.error.message }; }, function () { return { error: res.error.message }; });
+      }
+      return { error: res.error.message || "Falha na comunicação." };
+    });
+  }
+
+  function msg(el, texto, tipo) {
+    el.textContent = texto || "";
+    el.style.color = tipo === "err" ? "var(--red)" : tipo === "ok" ? "var(--green)" : "var(--text-dim)";
+  }
+
+  function carregarUsuarios() {
+    if (!meu || meu.papel !== "admin") return;
+    if (!usrWired) {
+      usrWired = true;
+      document.getElementById("usrGerar").addEventListener("click", function () { document.getElementById("usrSenha").value = gerarSenha(); });
+      document.getElementById("usrCriar").addEventListener("click", criarUsuario);
+    }
+    var lista = document.getElementById("usrLista");
+    lista.innerHTML = '<div class="empty">Carregando…</div>';
+    chamarUsuarios({ acao: "listar" }).then(function (d) {
+      if (d.error) { lista.innerHTML = '<div class="empty">Erro: ' + escapeHtml(d.error) + '</div>'; return; }
+      var us = d.usuarios || [];
+      us.sort(function (a, b) { return (b.ativo === a.ativo ? 0 : (a.ativo ? -1 : 1)) || (a.papel === b.papel ? 0 : (a.papel === "admin" ? -1 : 1)) || a.nome.localeCompare(b.nome); });
+      lista.innerHTML = "";
+      us.forEach(function (u) { lista.appendChild(linhaUsuario(u, d.eu)); });
+      if (!us.length) lista.innerHTML = '<div class="empty">Nenhum login.</div>';
+    });
+  }
+
+  function linhaUsuario(u, eu) {
+    var souEu = u.id === eu;
+    var row = document.createElement("div");
+    row.className = "usr-row" + (u.ativo === false ? " inativo" : "");
+    var papelLbl = u.papel === "admin" ? "Admin" : (u.papel === "operador" ? "Operador" : u.papel);
+    var acesso = u.ultimo_acesso ? "último acesso " + new Date(u.ultimo_acesso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca entrou";
+    row.innerHTML =
+      '<div class="usr-head"><div><div class="oid">' + escapeHtml(u.nome) + (souEu ? ' <span style="font-weight:500; color:var(--text-dim); font-size:13.5px">(você)</span>' : '') + '</div>' +
+      '<div class="meta mono">' + escapeHtml(u.email) + '</div><div class="meta">' + acesso + '</div></div>' +
+      '<div class="acoes" style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">' +
+      (u.ativo === false ? '<span class="badge off">Desativado</span>' : '') +
+      '<span class="badge ' + (u.papel === "admin" ? "admin" : "oper") + '">' + papelLbl + '</span></div></div>' +
+      '<div class="usr-edit">' +
+        '<label>Nome</label><div class="row"><input type="text" data-f="nome" value="' + escapeHtml(u.nome) + '"><button class="btn ghost" data-a="nome" style="flex:0 0 auto">Salvar</button></div>' +
+        (souEu ? '' :
+          '<label>Papel</label><div class="row"><select class="usr-select" data-f="papel"><option value="operador"' + (u.papel === "operador" ? " selected" : "") + '>Operador</option><option value="admin"' + (u.papel === "admin" ? " selected" : "") + '>Admin</option></select><button class="btn ghost" data-a="papel" style="flex:0 0 auto">Salvar</button></div>') +
+        '<label>Nova senha</label><div class="row"><input type="text" class="mono" data-f="senha" autocomplete="off" autocapitalize="off" placeholder="mínimo 8 caracteres"><button class="btn ghost" data-a="gerar" style="flex:0 0 auto">Gerar</button><button class="btn primary" data-a="senha" style="flex:0 0 auto">Definir</button></div>' +
+        (souEu ? '' : '<button class="btn ' + (u.ativo === false ? 'ghost' : 'danger') + '" data-a="ativo" style="margin-top:12px; width:100%">' + (u.ativo === false ? 'Reativar login' : 'Desativar login') + '</button>') +
+        '<div class="usr-msg"></div>' +
+      '</div>';
+    var head = row.querySelector(".usr-head");
+    var m = row.querySelector(".usr-msg");
+    head.addEventListener("click", function () { row.classList.toggle("aberto"); });
+    row.querySelectorAll("[data-a]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var a = btn.dataset.a;
+        if (a === "gerar") { row.querySelector('[data-f="senha"]').value = gerarSenha(); return; }
+        var payload = { acao: a, id: u.id };
+        if (a === "nome") payload.nome = row.querySelector('[data-f="nome"]').value.trim();
+        if (a === "papel") payload.papel = row.querySelector('[data-f="papel"]').value;
+        if (a === "senha") {
+          payload.senha = row.querySelector('[data-f="senha"]').value;
+          if (payload.senha.length < 8) { msg(m, "A senha precisa ter pelo menos 8 caracteres.", "err"); return; }
+        }
+        if (a === "ativo") {
+          payload.ativo = u.ativo === false;
+          if (!payload.ativo && btn.dataset.confirmar !== "1") {
+            btn.dataset.confirmar = "1";
+            btn.textContent = "Toque de novo para confirmar a desativação";
+            return;
+          }
+        }
+        btn.disabled = true;
+        msg(m, "Salvando…");
+        chamarUsuarios(payload).then(function (d) {
+          btn.disabled = false;
+          if (d.error) { msg(m, d.error, "err"); return; }
+          if (a === "senha") {
+            msg(m, "Senha definida: " + payload.senha + " — anote no gerenciador de senhas.", "ok");
+            toast("Senha de " + u.nome + " trocada.", "ok");
+            return;
+          }
+          toast(a === "ativo" ? (payload.ativo ? "Login reativado." : "Login desativado.") : "Alteração salva.", "ok");
+          carregarUsuarios();
+        });
+      });
+    });
+    return row;
+  }
+
+  function criarUsuario() {
+    var el = document.getElementById("usrMsgNovo");
+    var nome = document.getElementById("usrNome").value.trim();
+    var email = document.getElementById("usrEmail").value.trim();
+    var papel = document.getElementById("usrPapel").value;
+    var senha = document.getElementById("usrSenha").value;
+    if (nome.length < 2) { msg(el, "Informe o nome.", "err"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg(el, "E-mail inválido.", "err"); return; }
+    if (senha.length < 8) { msg(el, "A senha precisa ter pelo menos 8 caracteres (use Gerar).", "err"); return; }
+    var btn = document.getElementById("usrCriar");
+    btn.disabled = true;
+    msg(el, "Criando…");
+    chamarUsuarios({ acao: "criar", nome: nome, email: email, papel: papel, senha: senha }).then(function (d) {
+      btn.disabled = false;
+      if (d.error) { msg(el, d.error, "err"); return; }
+      msg(el, "Login criado: " + email + " / " + senha + " — anote no gerenciador de senhas.", "ok");
+      toast("Login de " + nome + " criado.", "ok");
+      document.getElementById("usrNome").value = "";
+      document.getElementById("usrEmail").value = "";
+      document.getElementById("usrSenha").value = "";
+      document.getElementById("usrPapel").value = "operador";
+      carregarUsuarios();
+    });
+  }
 })();
 </script>
 </body>
