@@ -165,6 +165,13 @@
   .badge.admin { background: var(--badge-wait); color: var(--accent-ink); }
   .badge.oper { background: var(--badge-sep); color: var(--blue); }
   .badge.off { background: none; color: var(--red); border: 1px solid var(--red); }
+  .nf-real { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14.5px; line-height: 1.45; background: var(--surface-2); border: 1px solid var(--line); }
+  .nf-real:empty { display: none; }
+  .nf-real.ok { border-color: var(--green); }
+  .nf-real.alerta { border-color: var(--accent); background: var(--badge-wait); color: var(--text); }
+  .nf-real b { font-size: 15.5px; }
+  .nf-real .nf-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  @media print { .nf-real { display: none !important; } }
   #cancelErr { color: var(--red); font-size: 13.5px; min-height: 18px; margin-top: 8px; }
 
   .order-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; }
@@ -525,7 +532,8 @@
 <div id="docsModal" role="dialog" aria-modal="true" aria-labelledby="docsTitulo">
   <div class="box">
     <h3 id="docsTitulo">Documentos do pedido</h3>
-    <div class="sub">Simulação: na integração real, a etiqueta da transportadora e a nota fiscal saem daqui automaticamente na impressora térmica, ao fim da conferência.</div>
+    <div class="sub">A nota fiscal vem do Olist. A etiqueta ainda é simulação, até a forma de envio ser configurada no Olist.</div>
+    <div id="docsNotaReal" class="nf-real"></div>
     <div id="docsPrint"></div>
     <div class="row" style="margin-top:14px">
       <button class="btn ghost" id="docsFechar">Fechar</button>
@@ -2371,7 +2379,7 @@
       '</div>';
 
     var nota =
-      '<div class="doc">' +
+      '<div class="doc" id="docNotaSim">' +
         '<div class="marca">SEM VALOR FISCAL</div>' +
         '<div class="faixa">NOTA FISCAL (DANFE SIMPLIFICADO) — SIMULAÇÃO</div>' +
         '<div class="bloco"><div class="rot">Emitente</div><div style="font-weight:700">PILCHS INFO</div><div>Dados fiscais preenchidos pelo ERP (Olist) na emissão real.</div></div>' +
@@ -2400,6 +2408,7 @@
       if (cr) cr.outerHTML = '<div class="grande" style="font-family:monospace">' + rastreio + '</div>';
     }
     docsModal.classList.add("show");
+    buscarNotaReal(pedido);
     docsModal.scrollTop = 0;
   }
 
@@ -2534,6 +2543,48 @@
       document.getElementById("usrSenha").value = "";
       document.getElementById("usrPapel").value = "operador";
       carregarUsuarios();
+    });
+  }
+
+  // ---------------- NOTA FISCAL REAL (Olist) NO FIM DA EMBALAGEM ----------------
+  function buscarNotaReal(pedido) {
+    var box = document.getElementById("docsNotaReal");
+    box.className = "nf-real";
+    if (pedido.canal && pedido.canal !== "olist") { box.innerHTML = ""; return; }
+    box.innerHTML = "Buscando a nota fiscal no Olist…";
+    sb.functions.invoke("nota-pedido", { method: "POST", body: { pedido_id: pedido.id } }).then(function (res) {
+      var d = res.data || {};
+      if (res.error || d.error) {
+        box.innerHTML = "Não foi possível consultar a nota no Olist agora. A nota abaixo é só a simulação.";
+        return;
+      }
+      if (d.status === "nao_olist") { box.innerHTML = ""; return; }
+      if (d.status === "nao_encontrado") {
+        box.className = "nf-real alerta";
+        box.innerHTML = "<b>Pedido não encontrado no Olist.</b><br>A nota abaixo é só a simulação.";
+        return;
+      }
+      if (d.status === "sem_nota") {
+        box.className = "nf-real alerta";
+        box.innerHTML = "<b>Este pedido ainda não tem nota fiscal no Olist.</b><br>Avise o financeiro antes de despachar. A nota abaixo é só a simulação.";
+        return;
+      }
+      var sim = document.getElementById("docNotaSim");
+      if (sim) sim.remove();
+      var titulo = "Nota fiscal nº " + escapeHtml(d.numero) + (d.serie ? " (série " + escapeHtml(d.serie) + ")" : "");
+      if (d.autorizada) {
+        box.className = "nf-real ok";
+        box.innerHTML = "<b>✓ " + titulo + " — autorizada</b>" +
+          (d.chave ? '<div class="mono" style="font-size:12.5px; word-break:break-all; margin-top:4px">' + escapeHtml(d.chave) + "</div>" : "") +
+          '<div class="nf-acoes">' + (d.link ? '<button class="btn primary" id="nfAbrir">🖨️ Abrir nota (PDF) para imprimir</button>' : "<span>Link do PDF indisponível no Olist.</span>") + "</div>";
+      } else {
+        box.className = "nf-real alerta";
+        box.innerHTML = "<b>⚠️ " + titulo + " — " + escapeHtml(d.situacao || "não autorizada") + "</b><br>" +
+          "A nota ainda não foi autorizada pela SEFAZ. O pedido pode seguir, mas não despache sem a nota: avise o financeiro." +
+          (d.link ? '<div class="nf-acoes"><button class="btn ghost" id="nfAbrir">Ver documento no Olist</button></div>' : "");
+      }
+      var bt = document.getElementById("nfAbrir");
+      if (bt) bt.addEventListener("click", function () { window.open(d.link, "_blank", "noopener"); });
     });
   }
 })();
