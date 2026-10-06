@@ -87,6 +87,24 @@
   .view { display: none; max-width: 640px; margin: 0 auto; }
   .view.active { display: block; }
 
+  /* ---------- RETIRADA DA LOJA ---------- */
+  .ret-res { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .ret-item { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); cursor: pointer; }
+  .ret-item.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .ret-item img, .ret-item .ret-sf { width: 48px; height: 48px; object-fit: contain; background: #fff; border-radius: 6px; flex: 0 0 48px; }
+  .ret-item .ret-sf { display: flex; align-items: center; justify-content: center; font-size: 10px; color: #8a8a84; }
+  .ret-item .ret-tx { flex: 1; min-width: 0; }
+  .ret-item .ret-nome { font-size: 14px; font-weight: 600; line-height: 1.25; }
+  .ret-item .ret-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .ret-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 14px; }
+  .ret-box.aviso { border-color: var(--accent-dim); background: var(--k-wait); }
+  .ret-box.ok { border-color: var(--green); background: var(--done-bg); }
+  .ret-box.err { border-color: var(--red); background: var(--k-pend); }
+  .ret-linha { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .ret-linha:last-child { border-bottom: none; }
+  .ret-linha .ret-tx { flex: 1; min-width: 0; font-size: 14px; }
+  .ret-linha .ret-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+  .ret-velha { color: var(--red); font-weight: 600; }
   /* ---------- CATÁLOGO ---------- */
   .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .cat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; }
@@ -550,6 +568,49 @@
       </div>
     </div>
 
+    <div class="view" id="view-retirada">
+      <div class="card">
+        <h2>Registrar retirada</h2>
+        <div class="scan-hint" style="text-align:left; margin:0 0 8px">Tirou um produto do estoque da loja? Registre aqui: o estoque sai do Olist na hora e o Mercado Livre para de vender essa unidade.</div>
+        <label for="retBusca">Produto</label>
+        <div class="row">
+          <input type="text" id="retBusca" autocomplete="off" placeholder="Nome, código ou código de barras">
+          <button class="btn primary" id="retBuscar" style="flex:0 0 auto">Buscar</button>
+        </div>
+        <div class="scan-hint" id="retBuscaMsg" style="text-align:left"></div>
+        <div class="ret-res" id="retRes"></div>
+        <label for="retDeposito">Saiu de qual depósito?</label>
+        <select id="retDeposito" class="usr-select"></select>
+        <div class="row">
+          <div style="flex:0 0 110px">
+            <label for="retQtd">Quantidade</label>
+            <input type="number" id="retQtd" min="1" max="50" step="1" value="1">
+          </div>
+          <div style="flex:1; min-width:0">
+            <label for="retVendedor">Vendedor</label>
+            <select id="retVendedor" class="usr-select"></select>
+          </div>
+        </div>
+        <label for="retObs">Observação (opcional)</label>
+        <input type="text" id="retObs" maxlength="200" autocomplete="off" placeholder="Ex: cliente vai voltar às 17h">
+        <div class="ret-box" id="retMsg" style="display:none"></div>
+        <button class="btn primary" id="retRegistrar" style="margin-top:12px; width:100%">Registrar retirada</button>
+        <div class="scan-hint" style="text-align:left">Depois, finalize a venda no Olist <b>no mesmo pedido</b> que o WMS criou. Não crie outro pedido: o estoque baixaria duas vezes.</div>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+          <h2 style="margin:0">Retiradas abertas</h2>
+          <button class="btn ghost small" id="retAtualizar">Atualizar</button>
+        </div>
+        <div class="scan-hint" style="text-align:left; margin:6px 0 4px">Produto fora da prateleira, venda ainda não finalizada no Olist. Não vendeu? Toque em <b>Devolver</b> para o estoque voltar.</div>
+        <div id="retAbertas"></div>
+      </div>
+      <div class="card">
+        <h2>Encerradas (recentes)</h2>
+        <div id="retFechadas"></div>
+      </div>
+    </div>
+
     <div class="view" id="view-catalogo">
       <div class="card">
         <h2>Catálogo da loja</h2>
@@ -861,14 +922,15 @@
     enderecos: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
     devolucoes: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
     inventario: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    retirada: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18l-1.5 11h-15z"/><path d="M8 9V6a4 4 0 0 1 8 0v3"/></svg>',
     catalogo: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
     usuarios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c3 .2 5.5 2.3 5.5 5.8"/></svg>',
     relatorios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 3 3 5-7"/></svg>',
     painel: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.5 8.5 15 12l3.5 3.5"/><path d="M8 7v10l-4-5Z"/></svg>'
   };
   var TABS = {
-    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"], ["catalogo", "Catálogo"], ["usuarios", "Usuários"]],
-    operador: [["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["painel", "Painel"], ["catalogo", "Catálogo"]],
+    admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"], ["retirada", "Retirada"], ["catalogo", "Catálogo"], ["usuarios", "Usuários"]],
+    operador: [["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["painel", "Painel"], ["retirada", "Retirada"], ["catalogo", "Catálogo"]],
     separador: [["separacao", "Separar"], ["painel", "Painel"]],
     embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
     expedicao: [["expedicao", "Expedir"], ["painel", "Painel"]]
@@ -877,13 +939,13 @@
     admin: [
       { label: "OPERAÇÃO", views: ["pedidos", "separacao", "embalagem", "expedicao"] },
       { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario", "relatorios"] },
-      { label: "LOJA", views: ["catalogo"] },
+      { label: "LOJA", views: ["retirada", "catalogo"] },
       { label: "ADMIN", views: ["painel", "usuarios"] }
     ],
     operador: [
       { label: "OPERAÇÃO", views: ["separacao", "embalagem", "expedicao"] },
       { label: "ESTOQUE", views: ["enderecos", "devolucoes", "inventario"] },
-      { label: "LOJA", views: ["catalogo"] },
+      { label: "LOJA", views: ["retirada", "catalogo"] },
       { label: "GERAL", views: ["painel"] }
     ]
   };
@@ -931,6 +993,7 @@
     if (name === "relatorios") carregarRelatorios();
     if (name === "usuarios") carregarUsuarios();
     if (name === "catalogo") prepararCatalogo();
+    if (name === "retirada") carregarRetirada();
     if (name === "painel") carregarPainel();
     carregarContadores();
   }
@@ -2482,9 +2545,178 @@
   }
 
 
+  // ---------------- RETIRADA DA LOJA (Parte 1) ----------------
+  var retWired = false, retProdutos = [], retSel = null, retDados = { depositos: [], vendedores: [], retiradas: [] }, retConfirmarSaldo = false;
+  function chamarRetirada(payload) {
+    return sb.functions.invoke("loja-retirada", { method: "POST", body: payload }).then(function (res) {
+      if (!res.error) return res.data || {};
+      var ctx = res.error.context;
+      if (ctx && typeof ctx.json === "function") return ctx.json().then(function (j) { return { error: (j && j.error) || res.error.message }; }, function () { return { error: res.error.message }; });
+      return { error: res.error.message || "Falha na comunicação." };
+    }, function (e) { return { error: String(e) }; });
+  }
+  function retCaixa(texto, tipo, html) {
+    var el = document.getElementById("retMsg");
+    if (!texto) { el.style.display = "none"; el.innerHTML = ""; return; }
+    el.className = "ret-box " + (tipo || "");
+    el.innerHTML = html ? texto : escapeHtml(texto);
+    el.style.display = "block";
+  }
+  function tempoDesde(iso) {
+    var min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (min < 60) return min + " min";
+    var h = Math.floor(min / 60);
+    if (h < 24) return h + " h";
+    return Math.floor(h / 24) + " d " + (h % 24) + " h";
+  }
+  function dataCurta(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+  function carregarRetirada() {
+    if (!retWired) {
+      retWired = true;
+      document.getElementById("retBuscar").addEventListener("click", buscarRetirada);
+      document.getElementById("retBusca").addEventListener("keydown", function (e) { if (e.key === "Enter") buscarRetirada(); });
+      document.getElementById("retRegistrar").addEventListener("click", registrarRetirada);
+      document.getElementById("retAtualizar").addEventListener("click", carregarRetirada);
+      ["retDeposito", "retQtd", "retVendedor"].forEach(function (id) {
+        document.getElementById(id).addEventListener("change", function () { retConfirmarSaldo = false; atualizarBotaoRetirada(); retCaixa(""); });
+      });
+    }
+    document.getElementById("retAbertas").innerHTML = '<div class="scan-hint" style="text-align:left">Carregando…</div>';
+    chamarRetirada({ acao: "inicio" }).then(function (r) {
+      if (r.error) { document.getElementById("retAbertas").innerHTML = '<div class="scan-hint" style="text-align:left; color:var(--red)">' + escapeHtml(r.error) + "</div>"; return; }
+      retDados = r;
+      var dep = document.getElementById("retDeposito"), vDep = dep.value;
+      dep.innerHTML = (r.depositos.length > 1 ? '<option value="">— escolha —</option>' : "") +
+        r.depositos.map(function (d) { return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.nome) + "</option>"; }).join("");
+      if (vDep) dep.value = vDep;
+      var ven = document.getElementById("retVendedor"), vVen = ven.value;
+      ven.innerHTML = '<option value="">— escolha —</option>' + r.vendedores.map(function (v) { return '<option value="' + escapeHtml(v.id) + '">' + escapeHtml(v.nome) + "</option>"; }).join("");
+      if (vVen) ven.value = vVen;
+      if (r.aviso) retCaixa("Não consegui carregar os vendedores: " + r.aviso, "err");
+      renderRetiradas();
+      atualizarBotaoRetirada();
+    });
+  }
+  function buscarRetirada() {
+    var termo = document.getElementById("retBusca").value.trim();
+    var m = document.getElementById("retBuscaMsg");
+    if (termo.length < 2) { msg(m, "Digite pelo menos 2 letras ou o código.", "err"); return; }
+    retSel = null; retConfirmarSaldo = false; retCaixa("");
+    document.getElementById("retRes").innerHTML = "";
+    msg(m, "Buscando no Olist…");
+    document.getElementById("retBuscar").disabled = true;
+    chamarRetirada({ acao: "buscar", termo: termo }).then(function (r) {
+      document.getElementById("retBuscar").disabled = false;
+      if (r.error) { msg(m, r.error, "err"); return; }
+      retProdutos = r.produtos || [];
+      if (!retProdutos.length) { msg(m, "Nenhum produto encontrado.", "err"); atualizarBotaoRetirada(); return; }
+      msg(m, retProdutos.length === 1 ? "Confira o produto abaixo." : "Toque no produto certo." + (r.mais ? " (mostrando os 8 primeiros — refine a busca se não achar)" : ""));
+      if (retProdutos.length === 1) retSel = retProdutos[0];
+      renderResultadosRetirada();
+      atualizarBotaoRetirada();
+    });
+  }
+  function renderResultadosRetirada() {
+    var el = document.getElementById("retRes");
+    el.innerHTML = "";
+    retProdutos.forEach(function (p) {
+      var d = document.createElement("div");
+      d.className = "ret-item" + (retSel && retSel.id === p.id ? " sel" : "");
+      d.innerHTML = (p.foto ? '<img alt="" src="' + escapeHtml(p.foto) + '">' : '<div class="ret-sf">sem foto</div>') +
+        '<div class="ret-tx"><div class="ret-nome">' + escapeHtml(p.nome) + '</div><div class="ret-sub mono">' + escapeHtml(p.codigo || "—") + " · " + moedaBR(p.preco) + "</div>" +
+        '<div class="ret-sub">' + p.saldos.map(function (s) { return escapeHtml(s.nome) + ": <b>" + s.saldo + "</b>"; }).join(" · ") + "</div></div>";
+      d.addEventListener("click", function () { retSel = p; retConfirmarSaldo = false; retCaixa(""); renderResultadosRetirada(); atualizarBotaoRetirada(); });
+      el.appendChild(d);
+    });
+  }
+  function atualizarBotaoRetirada() {
+    var b = document.getElementById("retRegistrar");
+    b.textContent = retConfirmarSaldo ? "Registrar mesmo assim" : "Registrar retirada";
+    b.disabled = !(retSel && document.getElementById("retDeposito").value && document.getElementById("retVendedor").value);
+  }
+  function registrarRetirada() {
+    var b = document.getElementById("retRegistrar");
+    var payload = {
+      acao: "registrar", produto_id: retSel && retSel.id,
+      deposito_id: document.getElementById("retDeposito").value,
+      vendedor_id: document.getElementById("retVendedor").value,
+      quantidade: Number(document.getElementById("retQtd").value),
+      obs: document.getElementById("retObs").value.trim(),
+      forcar: retConfirmarSaldo
+    };
+    if (!(payload.quantidade >= 1 && payload.quantidade <= 50 && Math.floor(payload.quantidade) === payload.quantidade)) { retCaixa("Quantidade inválida.", "err"); return; }
+    b.disabled = true;
+    retCaixa("Registrando no Olist… não feche a tela.", "");
+    chamarRetirada(payload).then(function (r) {
+      b.disabled = false;
+      if (r.error) { retCaixa(r.error, "err"); return; }
+      if (r.aviso === "saldo") {
+        retConfirmarSaldo = true;
+        atualizarBotaoRetirada();
+        retCaixa("⚠️ O Olist mostra saldo <b>" + r.saldo + "</b> em " + escapeHtml(r.deposito) + ". O produto está mesmo na sua mão? Se estiver, confira o depósito e toque em <b>Registrar mesmo assim</b> (o saldo vai ficar negativo e alguém precisa acertar o estoque depois).", "aviso", true);
+        return;
+      }
+      var t = r.retirada;
+      retCaixa("✓ Retirada registrada. Pedido <b>Nº " + escapeHtml(t.olist_pedido_numero) + "</b> criado no Olist em nome de " + escapeHtml(t.vendedor_nome) + ". Finalize a venda <b>nesse pedido</b>.", "ok", true);
+      retSel = null; retProdutos = []; retConfirmarSaldo = false;
+      document.getElementById("retRes").innerHTML = "";
+      document.getElementById("retBusca").value = "";
+      document.getElementById("retQtd").value = "1";
+      document.getElementById("retObs").value = "";
+      msg(document.getElementById("retBuscaMsg"), "");
+      atualizarBotaoRetirada();
+      carregarRetirada();
+    });
+  }
+  var RET_STATUS = { vendida: ["Vendida", "emb"], devolvida: ["Devolvida", "exp"], cancelada_olist: ["Cancelada no Olist", "exp"], erro: ["Erro", "cancel"] };
+  function renderRetiradas() {
+    var abertas = retDados.retiradas.filter(function (r) { return r.status === "aberta"; });
+    var fechadas = retDados.retiradas.filter(function (r) { return r.status !== "aberta"; }).slice(0, 20);
+    var elA = document.getElementById("retAbertas");
+    elA.innerHTML = abertas.length ? "" : '<div class="scan-hint" style="text-align:left">Nenhuma retirada aberta.</div>';
+    abertas.forEach(function (r) {
+      var velha = (Date.now() - new Date(r.criado_em).getTime()) > 24 * 3600 * 1000;
+      var d = document.createElement("div");
+      d.className = "ret-linha";
+      d.innerHTML = '<div class="ret-tx"><b>' + escapeHtml(String(r.quantidade)) + "×</b> " + escapeHtml(r.produto_nome) +
+        '<div class="ret-sub">Pedido Nº <b>' + escapeHtml(r.olist_pedido_numero || "?") + "</b> · " + escapeHtml(r.vendedor_nome) + " · " + escapeHtml(r.deposito_nome) + "</div>" +
+        '<div class="ret-sub">há <span class="' + (velha ? "ret-velha" : "") + '">' + tempoDesde(r.criado_em) + "</span> · registrado por " + escapeHtml(r.criado_por_nome || "?") + (r.obs ? " · " + escapeHtml(r.obs) : "") + "</div></div>" +
+        '<button class="btn danger small" style="flex:0 0 auto">Devolver</button>';
+      var btn = d.querySelector("button"), armado = false;
+      btn.addEventListener("click", function () {
+        if (!armado) {
+          armado = true; btn.textContent = "Confirmar devolução";
+          setTimeout(function () { if (armado && !btn.disabled) { armado = false; btn.textContent = "Devolver"; } }, 5000);
+          return;
+        }
+        btn.disabled = true; btn.textContent = "Devolvendo…";
+        chamarRetirada({ acao: "devolver", id: r.id }).then(function (res) {
+          if (res.error) { btn.disabled = false; armado = false; btn.textContent = "Devolver"; retCaixa(res.error, "err"); return; }
+          retCaixa("✓ Estoque devolvido e pedido Nº " + r.olist_pedido_numero + " cancelado no Olist.", "ok");
+          carregarRetirada();
+        });
+      });
+      elA.appendChild(d);
+    });
+    var elF = document.getElementById("retFechadas");
+    elF.innerHTML = fechadas.length ? "" : '<div class="scan-hint" style="text-align:left">Nada por aqui ainda.</div>';
+    fechadas.forEach(function (r) {
+      var st = RET_STATUS[r.status] || [r.status, "exp"];
+      var d = document.createElement("div");
+      d.className = "ret-linha";
+      d.innerHTML = '<div class="ret-tx">' + escapeHtml(String(r.quantidade)) + "× " + escapeHtml(r.produto_nome) +
+        '<div class="ret-sub">Pedido Nº ' + escapeHtml(r.olist_pedido_numero || "?") + " · " + escapeHtml(r.vendedor_nome) + " · " + dataCurta(r.criado_em) + (r.fechado_por_nome ? " · encerrada por " + escapeHtml(r.fechado_por_nome) : "") + "</div></div>" +
+        '<span class="badge ' + st[1] + '" style="flex:0 0 auto">' + st[0] + "</span>";
+      elF.appendChild(d);
+    });
+  }
+
   // ---------------- CATÁLOGO (Olist, só leitura) ----------------
   var catWired = false, catResultado = [];
-  function moeda(v) { return Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+  function moedaBR(v) { return Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
   function prepararCatalogo() {
     if (catWired) return;
     catWired = true;
@@ -2525,8 +2757,8 @@
     }).join("");
   }
   function precoHtml(p) {
-    if (p.preco_promocional > 0 && p.preco_promocional < p.preco) return "<s>" + moeda(p.preco) + "</s>" + moeda(p.preco_promocional);
-    return moeda(p.preco);
+    if (p.preco_promocional > 0 && p.preco_promocional < p.preco) return "<s>" + moedaBR(p.preco) + "</s>" + moedaBR(p.preco_promocional);
+    return moedaBR(p.preco);
   }
   function renderCatalogo() {
     var el = document.getElementById("catLista");
