@@ -379,6 +379,11 @@
     </div>
 
     <div class="view" id="view-enderecos">
+      <div class="card" id="cardEnderecamento">
+        <h2>Endereçamento</h2>
+        <div id="enderecamentoEstado" class="scan-hint" style="text-align:left; margin:0 0 10px"></div>
+        <button class="btn" id="enderecamentoBtn" style="width:100%"></button>
+      </div>
       <div class="card" id="cardNovoEndereco">
         <h2>Novo endereço</h2>
         <div class="row">
@@ -803,6 +808,8 @@
         // operador usa Endereços e Devoluções, mas criar endereço e decidir devolução é do admin
         document.getElementById("cardNovoEndereco").style.display = meu.papel === "admin" ? "" : "none";
         document.getElementById("cardDevPendentes").style.display = meu.papel === "admin" ? "" : "none";
+        document.getElementById("cardEnderecamento").style.display = meu.papel === "admin" ? "" : "none";
+        lerConfigEnderecamento();
         montarNav();
         carregarContadores();
       });
@@ -879,7 +886,7 @@
     document.getElementById("view-" + name).classList.add("active");
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.view === name); });
     if (name === "pedidos") { renderNpItems(); carregarFilaPedidos(); }
-    if (name === "separacao") carregarFilaSeparacao();
+    if (name === "separacao") { lerConfigEnderecamento(); carregarFilaSeparacao(); }
     if (name === "embalagem") carregarFilaEmbalagem();
     if (name === "expedicao") carregarFilaExpedicao();
     if (name === "enderecos") carregarEnderecos();
@@ -1153,8 +1160,8 @@
       var html = '<div class="card"><h2 class="op-title"><span class="mono">' + skuTxt(loteAtivo.sku) + '</span> — ' + escapeHtml(loteAtivo.nome) + '</h2>';
       html += '<div class="meta" style="margin-bottom:10px" id="loteContador">0/' + loteAtivo.total + ' confirmadas</div>';
       html += '<div class="scan-box">';
-      html += '<div id="loteEnderecoHint" class="scan-hint" style="margin-bottom:8px; font-weight:600">📍 Bipe o endereço antes do produto</div>';
-      html += '<input type="text" id="loteScanInput" class="mono" placeholder="bipe o endereço ou o SKU" autocomplete="off" autocapitalize="off">';
+      html += '<div id="loteEnderecoHint" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
+      html += '<input type="text" id="loteScanInput" class="mono" placeholder="' + (ENDERECAMENTO ? "bipe o endereço ou o SKU" : "bipe o SKU") + '" autocomplete="off" autocapitalize="off">';
       html += '<button class="btn primary btn-camera" id="loteCamBtn">📷 Usar câmera do celular</button>';
       html += '</div>';
       html += '<div class="row" style="margin-top:12px"><button class="btn ghost" id="loteVoltar" style="width:100%">← voltar</button></div></div>';
@@ -1186,7 +1193,7 @@
     if (!code || !loteAtivo) return;
     var alvo = normalizarCodigo(code);
 
-    var end = enderecosCache.find(function (e) { return normalizarCodigo(e.codigo) === alvo; });
+    var end = ENDERECAMENTO ? enderecosCache.find(function (e) { return normalizarCodigo(e.codigo) === alvo; }) : null;
     if (end) {
       loteEnderecoAtivo = end;
       var hint = document.getElementById("loteEnderecoHint");
@@ -1196,9 +1203,10 @@
       return;
     }
 
-    if (normalizarCodigo(loteAtivo.sku) !== alvo) { toastScan("Esse código não é o SKU desse lote nem um endereço conhecido", "err"); return; }
-    if (!loteEnderecoAtivo) { toastScan("Bipe o endereço antes do produto", "err"); return; }
+    if (normalizarCodigo(loteAtivo.sku) !== alvo) { toastScan(ENDERECAMENTO ? "Esse código não é o SKU desse lote nem um endereço conhecido" : "Esse código não é o SKU desse lote", "err"); return; }
     if (loteAtivo.pendentes.length === 0) { toastScan("Lote já concluído", "err"); return; }
+    if (!ENDERECAMENTO) { confirmarProximoDoLote(); return; }
+    if (!loteEnderecoAtivo) { toastScan("Bipe o endereço antes do produto", "err"); return; }
 
     sb.rpc("bipar_endereco_sku", { p_produto_id: loteAtivo.produto_id, p_endereco_id: loteEnderecoAtivo.id }).then(function (rpcRes) {
       if (rpcRes.error) { toastScan("Esse SKU não tem estoque em " + loteEnderecoAtivo.codigo, "err"); return; }
@@ -1353,8 +1361,8 @@
       var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
       var html = '<div class="card"><h2 class="op-title">Pedido <span class="mono">' + escapeHtml(pedido.id_externo) + '</span></h2>';
       html += '<div class="scan-box">';
-      if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">📍 Bipe o endereço antes do produto</div>';
-      html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
+      if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
+      html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" && ENDERECAMENTO ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
       html += '<button class="btn primary btn-camera" id="btnCam_' + fase + '">📷 Usar câmera do celular</button>';
       html += '<div class="scan-hint">Leitor USB/Bluetooth funciona direto. Sem leitor, use a câmera ou digite e aperte Enter.</div></div>';
       html += '<div id="itemsList_' + fase + '"></div>';
@@ -1411,7 +1419,7 @@
         '<div class="sku mono" id="locais_' + fase + '_' + it.id + '"></div>' +
         (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">' + (fase === "sep" ? "reportar falta de estoque" : "reportar problema") + '</button>');
       list.appendChild(row);
-      if (fase === "sep" && !done) carregarLocaisItem(it, fase);
+      if (fase === "sep" && !done && ENDERECAMENTO) carregarLocaisItem(it, fase);
     });
     list.querySelectorAll(".alerta-btn").forEach(function (btn) {
       btn.addEventListener("click", function () { reportarAlerta(btn.dataset.item, btn, fase); });
@@ -1476,8 +1484,8 @@
     var cfg = FASE_CFG[fase];
     var alvo = normalizarCodigo(code);
 
-    // na separação, primeiro tenta reconhecer como código de endereço
-    if (fase === "sep") {
+    // na separação, primeiro tenta reconhecer como código de endereço (só com endereçamento ligado)
+    if (fase === "sep" && ENDERECAMENTO) {
       var end = enderecosCache.find(function (e) { return normalizarCodigo(e.codigo) === alvo; });
       if (end) {
         sepEnderecoAtivo = end;
@@ -1489,10 +1497,10 @@
     }
 
     var item = pedido.itens_pedido.find(function (i) { return normalizarCodigo(i.produtos.sku) === alvo; });
-    if (!item) { toastScan("Código não pertence a este pedido nem é um endereço conhecido", "err"); return; }
+    if (!item) { toastScan(ENDERECAMENTO && fase === "sep" ? "Código não pertence a este pedido nem é um endereço conhecido" : "Código não pertence a este pedido", "err"); return; }
     if (item[cfg.campo] >= item.qtd) { toastScan("Item já conferido (" + item.qtd + "/" + item.qtd + ")", "err"); return; }
 
-    if (fase === "sep") {
+    if (fase === "sep" && ENDERECAMENTO) {
       if (!sepEnderecoAtivo) { toastScan("Bipe o endereço antes do produto", "err"); return; }
       sb.rpc("bipar_endereco_sku", { p_produto_id: item.produto_id, p_endereco_id: sepEnderecoAtivo.id }).then(function (rpcRes) {
         if (rpcRes.error) { toastScan("Esse SKU não tem estoque em " + sepEnderecoAtivo.codigo, "err"); return; }
@@ -2278,7 +2286,7 @@
       }).join("");
       var aviso = document.getElementById("cancelAvisoSep");
       var endWrap = document.getElementById("cancelEndWrap");
-      if (separadas > 0) {
+      if (separadas > 0 && ENDERECAMENTO) {
         aviso.style.display = "block";
         aviso.textContent = "⚠️ " + separadas + " unidade(s) já saíram da prateleira. Devolva fisicamente ao endereço escolhido abaixo — o sistema soma de volta ao estoque.";
         endWrap.style.display = "block";
@@ -2286,6 +2294,10 @@
           var sel = document.getElementById("cancelEndereco");
           sel.innerHTML = '<option value="">Escolha o endereço…</option>' + (r.data || []).map(function (e) { return '<option value="' + e.id + '">' + escapeHtml(e.codigo) + '</option>'; }).join("");
         });
+      } else if (separadas > 0) {
+        aviso.style.display = "block";
+        aviso.textContent = "⚠️ " + separadas + " unidade(s) já foram separadas. Devolva os produtos à prateleira.";
+        endWrap.style.display = "none";
       } else {
         aviso.style.display = "none";
         endWrap.style.display = "none";
@@ -2659,6 +2671,40 @@
     atual.replaceWith(tmp.firstChild);
     desenharCodigoChave();
   }
+
+  // ---------------- INTERRUPTOR DE ENDEREÇAMENTO ----------------
+  // Desligado: a separação pede só o produto (sem endereço e sem baixa de estoque por endereço).
+  var ENDERECAMENTO = true;
+  function lerConfigEnderecamento(cb) {
+    sb.from("config_wms").select("valor").eq("chave", "enderecamento_ativo").maybeSingle().then(function (res) {
+      if (!res.error && res.data) ENDERECAMENTO = res.data.valor === "true";
+      atualizarCardEnderecamento();
+      if (cb) cb();
+    });
+  }
+  function atualizarCardEnderecamento() {
+    var est = document.getElementById("enderecamentoEstado");
+    var bt = document.getElementById("enderecamentoBtn");
+    if (!est || !bt) return;
+    est.innerHTML = ENDERECAMENTO
+      ? "<b>Ligado.</b> Na separação, o operador bipa o endereço e depois o produto, e o estoque sai do endereço."
+      : "<b>Desligado.</b> Na separação, o operador bipa só o produto. Use enquanto não houver porta-paletes e endereços.";
+    bt.textContent = ENDERECAMENTO ? "Desligar endereçamento" : "Ligar endereçamento";
+    bt.className = ENDERECAMENTO ? "btn ghost" : "btn primary";
+  }
+  var endBtn = document.getElementById("enderecamentoBtn");
+  if (endBtn) endBtn.addEventListener("click", function () {
+    if (!meu || meu.papel !== "admin") return;
+    var novo = !ENDERECAMENTO;
+    endBtn.disabled = true;
+    sb.from("config_wms").update({ valor: novo ? "true" : "false", atualizado_em: new Date().toISOString(), atualizado_por: meu.id }).eq("chave", "enderecamento_ativo").then(function (res) {
+      endBtn.disabled = false;
+      if (res.error) { toast("Não foi possível alterar: " + res.error.message, "err"); return; }
+      ENDERECAMENTO = novo;
+      atualizarCardEnderecamento();
+      toast(novo ? "Endereçamento ligado." : "Endereçamento desligado: separação só pelo produto.", "ok");
+    });
+  });
 })();
 </script>
 </body>
