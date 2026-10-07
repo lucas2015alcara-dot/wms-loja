@@ -577,6 +577,7 @@
           <input type="text" id="retBusca" autocomplete="off" placeholder="Nome, código ou código de barras">
           <button class="btn primary" id="retBuscar" style="flex:0 0 auto">Buscar</button>
         </div>
+        <button class="btn primary btn-camera" id="retCamBtn">📷 Usar câmera do celular</button>
         <div class="scan-hint" id="retBuscaMsg" style="text-align:left"></div>
         <div class="ret-res" id="retRes"></div>
         <label for="retDeposito">Saiu de qual depósito?</label>
@@ -618,6 +619,7 @@
           <input type="text" id="catBusca" autocomplete="off" placeholder="Nome, código ou código de barras">
           <button class="btn primary" id="catBuscar" style="flex:0 0 auto">Buscar</button>
         </div>
+        <button class="btn primary btn-camera" id="catCamBtn">📷 Usar câmera do celular</button>
         <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:14px">
           <input type="checkbox" id="catSoLoja" checked style="width:auto"> Só o que tem na loja (Vendas Avulsas, Vitrine ou Kits)
         </label>
@@ -2579,6 +2581,9 @@
       document.getElementById("retBuscar").addEventListener("click", buscarRetirada);
       document.getElementById("retBusca").addEventListener("keydown", function (e) { if (e.key === "Enter") buscarRetirada(); });
       document.getElementById("retRegistrar").addEventListener("click", registrarRetirada);
+      document.getElementById("retCamBtn").addEventListener("click", function () {
+        abrirCamera(function (code) { fecharCamera(); document.getElementById("retBusca").value = code; buscarRetirada(); });
+      });
       document.getElementById("retAtualizar").addEventListener("click", carregarRetirada);
       ["retDeposito", "retQtd", "retVendedor"].forEach(function (id) {
         document.getElementById(id).addEventListener("change", function () { retConfirmarSaldo = false; atualizarBotaoRetirada(); retCaixa(""); });
@@ -2723,6 +2728,9 @@
     document.getElementById("catBuscar").addEventListener("click", buscarCatalogo);
     document.getElementById("catBusca").addEventListener("keydown", function (e) { if (e.key === "Enter") buscarCatalogo(); });
     document.getElementById("catSoLoja").addEventListener("change", renderCatalogo);
+    document.getElementById("catCamBtn").addEventListener("click", function () {
+      abrirCamera(function (code) { fecharCamera(); document.getElementById("catBusca").value = code; buscarCatalogo(); });
+    });
     setTimeout(function () { document.getElementById("catBusca").focus(); }, 50);
   }
   function buscarCatalogo() {
