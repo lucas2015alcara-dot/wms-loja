@@ -1115,6 +1115,7 @@
   }
 
   function showView(name) {
+    liberarReservasAtivas();
     document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
     document.getElementById("view-" + name).classList.add("active");
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.view === name); });
@@ -1318,7 +1319,7 @@
   }
 
   function carregarFilaSeparacaoLista() {
-    sb.from("pedidos").select("id,id_externo,canal,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em").then(function (res) {
+    sb.from("pedidos").select("id,id_externo,canal,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em").then(function (res) {
       var el = document.getElementById("sepFila");
       el.innerHTML = "";
       var lista = res.data || [];
@@ -1327,8 +1328,18 @@
         var qtdTotal = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
         var row = document.createElement("div");
         row.className = "order-row";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><span class="badge wait">iniciar →</span>';
-        row.addEventListener("click", function () { abrirSeparacao(o.id); });
+        var ocupado = reservaAtivaDeOutro(o);
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.' + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div>' +
+          (ocupado
+            ? '<div class="acoes">' + (meu.papel === "admin" ? '<button class="btn small" data-liberar="1">Liberar</button>' : '') + '<span class="badge exp">em uso</span></div>'
+            : '<span class="badge wait">iniciar →</span>');
+        if (ocupado) {
+          var bl = row.querySelector("[data-liberar]");
+          if (bl) bl.addEventListener("click", function (e) { e.stopPropagation(); liberarReservaAdmin(o.id, carregarFilaSeparacaoLista); });
+          row.addEventListener("click", function () { toast("Esse pedido está aberto com outra pessoa.", "err"); });
+        } else {
+          row.addEventListener("click", function () { abrirSeparacao(o.id); });
+        }
         el.appendChild(row);
       });
     });
@@ -1478,21 +1489,55 @@
   }
 
   // ---------------- RESERVA (evita dois separadores/embaladores pegarem o mesmo pedido) ----------------
+  var RESERVA_MIN = 15; // depois disso, um pedido esquecido aberto volta a ficar livre
+  var tokenAtual = null;
   function tentarReservarPedido(pedidoId, statusEsperado, cb) {
-    var limite = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    var limite = new Date(Date.now() - RESERVA_MIN * 60 * 1000).toISOString();
     sb.from("pedidos")
       .update({ reservado_por: meu.id, reservado_em: new Date().toISOString() })
       .eq("id", pedidoId)
       .eq("status", statusEsperado)
-      .or("reservado_por.is.null,reservado_em.lt." + limite)
+      .or("reservado_por.is.null,reservado_por.eq." + meu.id + ",reservado_em.lt." + limite)
       .select("id")
       .then(function (res) {
-        cb(!res.error && res.data && res.data.length > 0);
+        var ok = !res.error && res.data && res.data.length > 0;
+        if (ok) sb.auth.getSession().then(function (r) { tokenAtual = r.data.session ? r.data.session.access_token : null; });
+        cb(ok);
       });
   }
   function liberarReservaPedido(pedidoId) {
     if (!pedidoId) return;
     sb.from("pedidos").update({ reservado_por: null, reservado_em: null }).eq("id", pedidoId).eq("reservado_por", meu.id).then(function () {});
+  }
+  // solta o pedido aberto ao trocar de aba (separação e embalagem)
+  function liberarReservasAtivas() {
+    if (typeof sepAtivoId !== "undefined" && sepAtivoId) { liberarReservaPedido(sepAtivoId); sepAtivoId = null; }
+    if (typeof embAtivoId !== "undefined" && embAtivoId) { liberarReservaPedido(embAtivoId); embAtivoId = null; }
+  }
+  // solta também ao fechar ou recarregar a página (envio que sobrevive ao fechamento)
+  window.addEventListener("pagehide", function () {
+    if (!meu || !tokenAtual) return;
+    [sepAtivoId, embAtivoId].forEach(function (id) {
+      if (!id) return;
+      try {
+        fetch(SUPABASE_URL + "/rest/v1/pedidos?id=eq." + encodeURIComponent(id) + "&reservado_por=eq." + encodeURIComponent(meu.id), {
+          method: "PATCH", keepalive: true,
+          headers: { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + tokenAtual, "Content-Type": "application/json", "Prefer": "return=minimal" },
+          body: JSON.stringify({ reservado_por: null, reservado_em: null })
+        });
+      } catch (e) {}
+    });
+  });
+  function reservaAtivaDeOutro(o) {
+    if (!o.reservado_por || (meu && o.reservado_por === meu.id)) return false;
+    return o.reservado_em && (Date.now() - new Date(o.reservado_em).getTime()) < RESERVA_MIN * 60 * 1000;
+  }
+  function liberarReservaAdmin(pedidoId, depois) {
+    sb.from("pedidos").update({ reservado_por: null, reservado_em: null }).eq("id", pedidoId).then(function (r) {
+      if (r.error) { toast("Não foi possível liberar: " + r.error.message, "err"); return; }
+      toast("Pedido liberado ✓", "ok");
+      if (depois) depois();
+    });
   }
 
   // ---------------- EMBALAGEM (bipa o item, sistema acha os pedidos que precisam dele) ----------------
@@ -1551,10 +1596,13 @@
           el.innerHTML = '<div class="scan-hint" style="margin:10px 0">' + escapeHtml(resProd.data.nome) + ' — escolha o pedido:</div>';
           itens.forEach(function (i) {
             var o = i.pedidos;
-            var ocupado = o.reservado_por && o.reservado_por !== meu.id;
+            var ocupado = reservaAtivaDeOutro(o);
             var row = document.createElement("div");
             row.className = "order-row";
-            row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div><span class="badge sep">' + (ocupado ? 'ocupado' : 'usar →') + '</span>';
+            row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div>' +
+              (ocupado && meu.papel === "admin" ? '<div class="acoes"><button class="btn small" data-liberar="1">Liberar</button><span class="badge exp">ocupado</span></div>' : '<span class="badge sep">' + (ocupado ? 'ocupado' : 'usar →') + '</span>');
+            var blE = row.querySelector("[data-liberar]");
+            if (blE) blE.addEventListener("click", function (e) { e.stopPropagation(); liberarReservaAdmin(o.id, function () { buscarPedidosPorItemEmbalagem(codigo); }); });
             if (!ocupado) row.addEventListener("click", function () { abrirEmbalagem(o.id); });
             el.appendChild(row);
           });
