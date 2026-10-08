@@ -336,6 +336,7 @@
   .scan-box { background: var(--accent); border: none; border-radius: 14px; color: #1A1A1A; }
   .scan-box input { background: #FFFFFF; border: 2px solid #1A1A1A; color: #1A1A1A; height: 56px; font-size: 20px; font-weight: 700; }
   .scan-box .scan-hint, .scan-box #endAtivo_sep, .scan-box #loteEnderecoHint { color: #1A1A1A; }
+  .scan-box #endAtivo_sep { text-align: left; font-size: 15px; font-weight: 800; }
   .scan-box .btn-camera, .scan-box button.btn.primary { background: #1A1A1A; border-color: #1A1A1A; color: #FFFFFF; }
   .pick-item.done { border-color: var(--green); }
   /* menu lateral preto (no celular vira a barra do topo) */
@@ -428,6 +429,14 @@
   #itemsList_emb .pick-item .top { gap: 12px; align-items: flex-start; }
   #itemsList_emb .pick-item .qty { flex: none; }
   @media (max-width: 600px) { .op-prog { align-items: flex-start; } }
+  #view-separacao { max-width: none; }
+  .so-pc { display: none; }
+  @media (min-width: 900px) { .so-pc { display: block; } .so-cel { display: none !important; } }
+  @media (max-width: 899px) { #sepLado { display: none; } }
+  #itemsList_sep .pick-item.agora { border: 2px solid var(--text); box-shadow: inset 8px 0 0 var(--accent); padding-left: 20px; }
+  #itemsList_sep .pick-item.agora .name { font-size: 20px; font-weight: 800; }
+  #itemsList_sep .pick-item.agora::before { content: "Pegue agora"; display: inline-block; font-size: 12px; font-weight: 800; background: var(--accent); color: #1A1A1A; border-radius: 999px; padding: 3px 10px; margin-bottom: 8px; }
+  .prox-row .idade.velho { color: var(--red); font-weight: 700; }
   .prox-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
   .prox-row:hover { background: var(--surface-2); }
   .prox-row.atual { border-color: var(--text); background: var(--k-wait); }
@@ -515,23 +524,34 @@
     </div>
 
     <div class="view" id="view-separacao">
-      <div class="card" id="sepSelectCard">
-        <h2>Separação</h2>
-        <div class="row" style="margin-bottom:10px">
-          <button class="btn primary" id="btnModoSepPedido" style="width:100%">Pedido por pedido</button>
-          <button class="btn ghost" id="btnModoSepLote" style="width:100%">Em lote (pedidos simples)</button>
+      <div class="op-layout">
+        <div class="op-main">
+          <div class="card" id="sepSelectCard">
+            <h2 class="op-title">Separar</h2>
+            <div class="row" style="margin-bottom:10px">
+              <button class="btn primary" id="btnModoSepPedido" style="width:100%">Pedido por pedido</button>
+              <button class="btn ghost" id="btnModoSepLote" style="width:100%">Em lote (pedidos simples)</button>
+            </div>
+            <div id="sepModoPedido">
+              <h3 class="so-cel" style="margin:6px 0">Escolha um pedido para separar</h3>
+              <p class="so-pc pn-obs">Escolha um pedido na fila ao lado. Os mais antigos estão no topo.</p>
+              <div id="sepFila" class="so-cel"></div>
+            </div>
+            <div id="sepModoLote" style="display:none">
+              <p class="meta" style="margin-bottom:10px">Agrupa pedidos com 1 único item e 1 unidade — pega tudo de um SKU de uma vez, não importa pra qual desses pedidos vai cada unidade.</p>
+              <div id="sepLoteLista"></div>
+            </div>
+          </div>
+          <div id="sepLoteAtivo" style="display:none"></div>
+          <div id="sepAtivo" style="display:none"></div>
         </div>
-        <div id="sepModoPedido">
-          <h3 style="margin:6px 0">Escolha um pedido para separar</h3>
-          <div id="sepFila"></div>
-        </div>
-        <div id="sepModoLote" style="display:none">
-          <p class="meta" style="margin-bottom:10px">Agrupa pedidos com 1 único item e 1 unidade — pega tudo de um SKU de uma vez, não importa pra qual desses pedidos vai cada unidade.</p>
-          <div id="sepLoteLista"></div>
-        </div>
+        <aside class="op-lado" id="sepLado">
+          <div class="card">
+            <h2>Fila de separação</h2>
+            <div id="sepProximos"><div class="empty">Carregando…</div></div>
+          </div>
+        </aside>
       </div>
-      <div id="sepLoteAtivo" style="display:none"></div>
-      <div id="sepAtivo" style="display:none"></div>
     </div>
 
     <div class="view" id="view-embalagem">
@@ -1347,8 +1367,45 @@
   // ---------------- SEPARAÇÃO ----------------
   var sepAtivoId = null;
   var sepModoAtual = "pedido";
+  function idadeTexto(iso) {
+    var min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (min < 60) return min + " min";
+    var h = Math.floor(min / 60), m = min % 60;
+    return h + " h" + (m ? " " + m : "");
+  }
+  function carregarSepProximos() {
+    var el = document.getElementById("sepProximos");
+    if (!el) return;
+    sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em").limit(30).then(function (res) {
+      var lista = res.data || [];
+      if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido esperando separação.</div>'; return; }
+      el.innerHTML = "";
+      lista.forEach(function (o) {
+        var un = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
+        var ocupado = reservaAtivaDeOutro(o);
+        var velho = !ocupado && o.id !== sepAtivoId && (Date.now() - new Date(o.criado_em).getTime()) > 2 * 3600 * 1000;
+        var row = document.createElement("div");
+        row.className = "prox-row" + (o.id === sepAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "");
+        row.innerHTML = '<div><b>' + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div>' +
+          '<span class="idade' + (velho ? ' velho' : '') + '">' + (ocupado ? 'em uso' : (o.id === sepAtivoId ? 'aberto' : idadeTexto(o.criado_em))) + '</span>';
+        if (ocupado && meu.papel === "admin") {
+          row.title = "Em uso por outra pessoa. Clique para liberar.";
+          row.style.cursor = "pointer";
+          row.addEventListener("click", function () { liberarReservaAdmin(o.id, carregarSepProximos); });
+        } else if (!ocupado && o.id !== sepAtivoId) {
+          row.addEventListener("click", function () {
+            if (sepAtivoId) liberarReservaPedido(sepAtivoId);
+            abrirSeparacao(o.id);
+          });
+        }
+        el.appendChild(row);
+      });
+    });
+  }
+
   function carregarFilaSeparacao() {
     sepAtivoId = null;
+    carregarSepProximos();
     document.getElementById("sepSelectCard").style.display = "";
     document.getElementById("sepAtivo").style.display = "none";
     document.getElementById("sepLoteAtivo").style.display = "none";
@@ -1409,6 +1466,7 @@
       document.getElementById("sepSelectCard").style.display = "none";
       document.getElementById("sepAtivo").style.display = "";
       renderFase(pedidoId, "sep");
+      carregarSepProximos();
     });
   }
 
@@ -1726,7 +1784,7 @@
       var html = '<div class="card"><div class="op-cab"><div><div class="canal">' + canalLabel(pedido.canal) + '</div><h2 class="op-title">Pedido ' + escapeHtml(pedido.id_externo) + '</h2></div><div class="op-prog" id="prog_' + fase + '"></div></div>';
       html += '<div class="scan-box">';
       if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
-      html += '<label for="scanInput_' + fase + '" class="scan-rot">' + (fase === "emb" ? "Bipe cada produto" : "Bipe o produto") + '</label>';
+      if (fase === "emb") html += '<label for="scanInput_' + fase + '" class="scan-rot">Bipe cada produto</label>';
       html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" && ENDERECAMENTO ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
       html += '<button class="btn primary btn-camera" id="btnCam_' + fase + '">📷 Usar câmera do celular</button>';
       html += '<div class="scan-hint">Leitor USB/Bluetooth funciona direto. Sem leitor, use a câmera ou digite e aperte Enter.</div></div>';
@@ -1779,10 +1837,13 @@
       var feito = itens.reduce(function (s, i) { return s + Math.min(i[cfg.campo], i.qtd); }, 0);
       prog.innerHTML = '<b>' + feito + ' de ' + tot + (fase === "emb" ? ' conferidos' : ' separados') + '</b><div class="trilho"><div style="width:' + (tot ? Math.round(feito / tot * 100) : 0) + '%"></div></div>';
     }
+    var jaMarcouAgora = false;
     itens.forEach(function (it) {
       var done = it[cfg.campo] >= it.qtd;
       var row = document.createElement("div");
-      row.className = "pick-item" + (done ? " done" : "");
+      var agora = fase === "sep" && !done && !jaMarcouAgora;
+      if (agora) jaMarcouAgora = true;
+      row.className = "pick-item" + (done ? " done" : "") + (agora ? " agora" : "");
       row.id = "item_" + fase + "_" + it.id;
       row.innerHTML =
         '<div class="top"><div><div class="name">' + escapeHtml(it.produtos.nome) + '</div><div class="sku mono">' + skuTxt(it.produtos.sku) + '</div></div>' +
