@@ -520,6 +520,12 @@
   .pg-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 20px; align-items: start; }
   @media (max-width: 899px) { .op-layout { row-gap: 0; } .pg-grade { grid-template-columns: minmax(0, 1fr); } .pg-titulo { font-size: 24px; } }
   @media (min-width: 900px) { .pg-titulo { font-size: 32px; margin-bottom: 20px; } }
+  #expManualModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 160; align-items: center; justify-content: center; padding: 16px; }
+  #expManualModal.show { display: flex; }
+  #expManualModal .box { background: var(--surface); border: 2px solid #1A1A1A; border-radius: 16px; padding: 20px; width: 100%; max-width: 440px; }
+  #expManualModal h3 { margin: 0 0 4px; font-size: 21px; font-weight: 800; }
+  #expManualModal .sub { font-size: 14px; color: var(--text-dim); margin-bottom: 8px; }
+  .exp-lin .manual { font-size: 11.5px; font-weight: 800; background: var(--accent); color: #1A1A1A; border-radius: 999px; padding: 2px 8px; flex: none; }
 </style>
 </head>
 <body>
@@ -661,6 +667,11 @@
             <h2>Próximos na bancada</h2>
             <div id="embProximos"><div class="empty">Carregando…</div></div>
             <div class="pn-obs" style="margin-top:10px">Toque num pedido para embalar sem precisar bipar.</div>
+          </div>
+          <div class="card">
+            <h2>Reimprimir etiqueta + nota</h2>
+            <div id="embReimpressao"><div class="empty">Carregando…</div></div>
+            <div class="pn-obs" style="margin-top:10px">Pedidos já embalados que ainda não saíram. A reimpressão não muda o status do pedido.</div>
           </div>
         </aside>
       </div>
@@ -1009,6 +1020,28 @@
     <div class="row" style="margin-top:14px">
       <button class="btn ghost" id="docsFechar">Fechar</button>
       <button class="btn primary" id="docsImprimir">🖨️ Imprimir etiqueta + nota</button>
+    </div>
+  </div>
+</div>
+
+<div id="expManualModal" role="dialog" aria-modal="true" aria-labelledby="expManualTitulo">
+  <div class="box">
+    <h3 id="expManualTitulo">Expedir sem bipar</h3>
+    <div class="sub" id="expManualSub"></div>
+    <label for="expManualMotivo">Motivo</label>
+    <select id="expManualMotivo" class="usr-select">
+      <option value="">— escolha —</option>
+      <option>Etiqueta não lê no leitor</option>
+      <option>Etiqueta danificada ou perdida</option>
+      <option>Envio sem etiqueta (retirada, entrega própria)</option>
+      <option>Outro</option>
+    </select>
+    <label for="expManualSenha">Sua senha de ADM</label>
+    <input type="password" id="expManualSenha" autocomplete="current-password">
+    <div class="scan-hint" id="expManualMsg" style="text-align:left"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" id="expManualCancelar">Cancelar</button>
+      <button class="btn primary" id="expManualConfirmar">Confirmar expedição</button>
     </div>
   </div>
 </div>
@@ -1875,9 +1908,36 @@
     });
   }
 
+  // pedidos já embalados (ainda não expedidos): permite imprimir de novo etiqueta + nota
+  function carregarEmbReimpressao() {
+    var el = document.getElementById("embReimpressao");
+    if (!el) return;
+    sb.from("pedidos").select("id,id_externo,canal,itens_pedido(qtd)").eq("status", "embalado").order("criado_em", { ascending: false }).limit(10).then(function (res) {
+      var lista = res.data || [];
+      if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido embalado esperando expedição.</div>'; return; }
+      el.innerHTML = "";
+      lista.forEach(function (o) {
+        var un = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
+        var row = document.createElement("div");
+        row.className = "prox-row";
+        row.innerHTML = '<div><b>' + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div><span>🖨️ reimprimir</span>';
+        row.addEventListener("click", function () { reimprimirPedido(o.id); });
+        el.appendChild(row);
+      });
+    });
+  }
+  function reimprimirPedido(pedidoId) {
+    sb.from("pedidos").select("id,id_externo,canal,status,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single().then(function (r) {
+      if (r.error || !r.data) { toast("Não consegui abrir o pedido para reimprimir.", "err"); return; }
+      mostrarDocumentosSimulados(r.data);
+      document.getElementById("docsTitulo").textContent = "Reimpressão: documentos do pedido " + r.data.id_externo;
+    });
+  }
+
   function carregarFilaEmbalagem() {
     embAtivoId = null;
     carregarEmbProximos();
+    carregarEmbReimpressao();
     document.getElementById("embSelectCard").style.display = "";
     document.getElementById("embAtivo").style.display = "none";
     document.getElementById("embFila").innerHTML = "";
@@ -2197,14 +2257,14 @@
   }
   function carregarExpedidosHoje() {
     var ini = new Date(); ini.setHours(0, 0, 0, 0);
-    sb.from("pedidos").select("id,id_externo,canal,expedido_em").eq("status", "expedido").gte("expedido_em", ini.toISOString()).order("expedido_em", { ascending: false }).limit(200).then(function (res) {
+    sb.from("pedidos").select("id,id_externo,canal,expedido_em,expedido_manual_por").eq("status", "expedido").gte("expedido_em", ini.toISOString()).order("expedido_em", { ascending: false }).limit(200).then(function (res) {
       var el = document.getElementById("expHoje");
       var lista = res.data || [];
       document.getElementById("expHojeQtd").textContent = lista.length;
       atualizarBarraExp(lista.length);
       if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum pacote expedido hoje.</div>'; return; }
       el.innerHTML = lista.slice(0, 30).map(function (o) {
-        return '<div class="exp-lin"><i class="ponto"></i><b>' + escapeHtml(o.id_externo) + '</b><span>' + canalLabel(o.canal) + '</span><time>' + horaCurta(o.expedido_em) + '</time></div>';
+        return '<div class="exp-lin"><i class="ponto"></i><b>' + escapeHtml(o.id_externo) + '</b><span>' + canalLabel(o.canal) + '</span>' + (o.expedido_manual_por ? '<i class="manual" title="Expedido sem bipe por um ADM">sem bipe</i>' : '') + '<time>' + horaCurta(o.expedido_em) + '</time></div>';
       }).join("") + (lista.length > 30 ? '<div class="pn-obs" style="margin-top:8px">Mostrando os 30 mais recentes.</div>' : '');
     });
   }
@@ -2222,11 +2282,14 @@
         var row = document.createElement("div");
         row.className = "order-row";
         row.style.cursor = "default";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><button class="btn small" data-exp="' + o.id + '">expedir</button>';
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><div style="display:flex; gap:6px; flex:none"><button class="btn ghost small" data-reimp="' + o.id + '" title="Reimprimir etiqueta + nota" aria-label="Reimprimir etiqueta e nota">🖨️</button>' + (meu && meu.papel === "admin" ? '<button class="btn small" data-exp="' + o.id + '" data-num="' + escapeHtml(o.id_externo) + '">expedir</button>' : '') + '</div>';
         el.appendChild(row);
       });
       el.querySelectorAll("[data-exp]").forEach(function (btn) {
-        btn.addEventListener("click", function () { expedirPedidoPorId(btn.dataset.exp); });
+        btn.addEventListener("click", function () { abrirExpedicaoManual(btn.dataset.exp, btn.dataset.num); });
+      });
+      el.querySelectorAll("[data-reimp]").forEach(function (btn) {
+        btn.addEventListener("click", function () { reimprimirPedido(btn.dataset.reimp); });
       });
     });
 
@@ -2249,14 +2312,50 @@
     if (focusInput) focusInput.focus();
   }
 
-  function expedirPedidoPorId(pedidoId) {
-    sb.from("pedidos").update({ status: "expedido" }).eq("id", pedidoId).then(function (r) {
-      if (r.error) { toast("Erro: " + r.error.message, "err"); return; }
-      toast("Pedido expedido ✓", "ok");
-      setExpUltimo("ok", "Pedido expedido", "Marcado manualmente pela lista.");
-      carregarFilaExpedicao();
-      carregarContadores();
-    });
+  // expedição sem bipe: só ADM, com a senha dele; fica gravado quem fez e o motivo
+  var expManualId = null;
+  function abrirExpedicaoManual(pedidoId, numero) {
+    if (!meu || meu.papel !== "admin") { toast("Só um ADM pode expedir sem bipar.", "err"); return; }
+    expManualId = pedidoId;
+    document.getElementById("expManualSub").textContent = "Pedido " + (numero || "") + ". O normal é expedir bipando o pacote. Use isto só quando não der para bipar.";
+    document.getElementById("expManualMotivo").value = "";
+    document.getElementById("expManualSenha").value = "";
+    msg(document.getElementById("expManualMsg"), "");
+    document.getElementById("expManualConfirmar").disabled = false;
+    document.getElementById("expManualModal").classList.add("show");
+    setTimeout(function () { document.getElementById("expManualMotivo").focus(); }, 50);
+  }
+  function fecharExpedicaoManual() { expManualId = null; document.getElementById("expManualSenha").value = ""; document.getElementById("expManualModal").classList.remove("show"); }
+  document.getElementById("expManualCancelar").addEventListener("click", fecharExpedicaoManual);
+  document.getElementById("expManualSenha").addEventListener("keydown", function (e) { if (e.key === "Enter") confirmarExpedicaoManual(); });
+  document.getElementById("expManualConfirmar").addEventListener("click", confirmarExpedicaoManual);
+  function confirmarExpedicaoManual() {
+    var m = document.getElementById("expManualMsg");
+    var motivo = document.getElementById("expManualMotivo").value;
+    var senha = document.getElementById("expManualSenha").value;
+    if (!motivo) { msg(m, "Escolha o motivo.", "err"); return; }
+    if (!senha) { msg(m, "Digite sua senha.", "err"); return; }
+    var btn = document.getElementById("expManualConfirmar");
+    btn.disabled = true;
+    msg(m, "Conferindo a senha…");
+    sb.auth.getUser().then(function (u) {
+      var email = u && u.data && u.data.user && u.data.user.email;
+      if (!email) throw new Error("sessão");
+      return sb.auth.signInWithPassword({ email: email, password: senha });
+    }).then(function (res) {
+      if (res.error) { btn.disabled = false; msg(m, "Senha incorreta.", "err"); return; }
+      var id = expManualId;
+      sb.from("pedidos").update({ status: "expedido", expedido_manual_por: meu.id, expedido_manual_motivo: motivo }).eq("id", id).eq("status", "embalado").select("id_externo").then(function (r) {
+        btn.disabled = false;
+        if (r.error) { msg(m, "Erro: " + r.error.message, "err"); return; }
+        if (!r.data || !r.data.length) { msg(m, "Esse pedido não está mais na fila (já expedido ou cancelado).", "err"); carregarFilaExpedicao(); return; }
+        fecharExpedicaoManual();
+        toast("Pedido " + r.data[0].id_externo + " expedido (sem bipe) ✓", "ok");
+        setExpUltimo("aviso", "Pedido " + r.data[0].id_externo + " expedido sem bipe", "Liberado por " + meu.nome + ": " + motivo + ".");
+        carregarFilaExpedicao();
+        carregarContadores();
+      });
+    }).catch(function () { btn.disabled = false; msg(m, "Não consegui conferir a senha. Tente de novo.", "err"); });
   }
 
   function handleScanExpedicao(code) {
