@@ -408,6 +408,32 @@
   .pn-mapa { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
   .pn-mapa div { border-radius: 6px; padding: 8px 4px; text-align: center; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pn-mapa div.ocupado { background: var(--accent); color: #1A1A1A; border-color: transparent; }
+  /* ---------- TELAS DE OPERAÇÃO v2 (colunas no computador) ---------- */
+  #view-embalagem { max-width: none; }
+  .op-layout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .op-main { flex: 2 1 520px; min-width: 0; }
+  .op-lado { flex: 1 1 300px; min-width: 0; }
+  .scan-rot { display: block; font-size: 15px; font-weight: 800; color: #1A1A1A; margin: 0 0 8px; text-align: left; }
+  .op-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  .op-cab .canal { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
+  .op-cab .op-title { margin: 0; font-size: 34px; }
+  .op-prog { min-width: 200px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .op-prog b { font-size: 15px; }
+  .op-prog .trilho { width: 220px; max-width: 100%; height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .op-prog .trilho > div { height: 8px; background: var(--text); border-radius: 999px; }
+  #itemsList_emb { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+  #itemsList_emb .pick-item { margin: 0; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+  #itemsList_emb .pick-item:not(.done) { border: 2px solid var(--text); }
+  #itemsList_emb .pick-item:not(.done) .qty::after { content: "bipar"; display: inline-block; margin-left: 8px; font-family: 'Archivo', sans-serif; font-size: 12px; font-weight: 800; background: var(--accent); color: #1A1A1A; border-radius: 999px; padding: 3px 9px; vertical-align: middle; }
+  #itemsList_emb .pick-item .top { gap: 12px; align-items: flex-start; }
+  #itemsList_emb .pick-item .qty { flex: none; }
+  @media (max-width: 600px) { .op-prog { align-items: flex-start; } }
+  .prox-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+  .prox-row:hover { background: var(--surface-2); }
+  .prox-row.atual { border-color: var(--text); background: var(--k-wait); }
+  .prox-row.ocupado { cursor: default; opacity: .6; }
+  .prox-row b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .prox-row span { font-size: 13px; color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -509,16 +535,28 @@
     </div>
 
     <div class="view" id="view-embalagem">
-      <div class="card" id="embSelectCard">
-        <h2>Bipe o item pra começar a embalar</h2>
-        <div class="scan-box">
-          <input type="text" id="embScanSku" class="mono" placeholder="bipe o SKU do produto" autocomplete="off" autocapitalize="off">
-          <button class="btn primary btn-camera" id="embScanCamBtn">📷 Usar câmera do celular</button>
-          <div class="scan-hint">Bipe qualquer item que você pegou na mesa — o sistema mostra a quais pedidos ele pode pertencer.</div>
+      <div class="op-layout">
+        <div class="op-main">
+          <div class="card" id="embSelectCard">
+            <h2 class="op-title">Embalar</h2>
+            <div class="scan-box">
+              <label for="embScanSku" class="scan-rot">Bipe o produto</label>
+              <input type="text" id="embScanSku" class="mono" placeholder="Aguardando leitura" autocomplete="off" autocapitalize="off">
+              <button class="btn primary btn-camera" id="embScanCamBtn">📷 Usar câmera do celular</button>
+              <div class="scan-hint">Bipe qualquer item da bancada: o sistema acha o pedido dele.</div>
+            </div>
+            <div id="embFila"></div>
+          </div>
+          <div id="embAtivo" style="display:none"></div>
         </div>
-        <div id="embFila"></div>
+        <aside class="op-lado">
+          <div class="card">
+            <h2>Próximos na bancada</h2>
+            <div id="embProximos"><div class="empty">Carregando…</div></div>
+            <div class="pn-obs" style="margin-top:10px">Toque num pedido para embalar sem precisar bipar.</div>
+          </div>
+        </aside>
       </div>
-      <div id="embAtivo" style="display:none"></div>
     </div>
 
     <div class="view" id="view-expedicao">
@@ -1561,8 +1599,31 @@
 
   // ---------------- EMBALAGEM (bipa o item, sistema acha os pedidos que precisam dele) ----------------
   var embAtivoId = null;
+  function carregarEmbProximos() {
+    var el = document.getElementById("embProximos");
+    if (!el) return;
+    sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "separado").order("criado_em").limit(15).then(function (res) {
+      var lista = res.data || [];
+      if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido separado esperando embalagem.</div>'; return; }
+      el.innerHTML = "";
+      lista.forEach(function (o) {
+        var un = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
+        var ocupado = reservaAtivaDeOutro(o);
+        var row = document.createElement("div");
+        row.className = "prox-row" + (o.id === embAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "");
+        row.innerHTML = '<div><b>' + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div><span>' + (ocupado ? 'em uso' : (o.id === embAtivoId ? 'aberto' : 'abrir')) + '</span>';
+        if (!ocupado && o.id !== embAtivoId) row.addEventListener("click", function () {
+          if (embAtivoId) liberarReservaPedido(embAtivoId);
+          abrirEmbalagem(o.id);
+        });
+        el.appendChild(row);
+      });
+    });
+  }
+
   function carregarFilaEmbalagem() {
     embAtivoId = null;
+    carregarEmbProximos();
     document.getElementById("embSelectCard").style.display = "";
     document.getElementById("embAtivo").style.display = "none";
     document.getElementById("embFila").innerHTML = "";
@@ -1636,6 +1697,7 @@
       document.getElementById("embSelectCard").style.display = "none";
       document.getElementById("embAtivo").style.display = "";
       renderFase(pedidoId, "emb");
+      carregarEmbProximos();
     });
   }
 
@@ -1651,7 +1713,7 @@
   function renderFase(pedidoId, fase) {
     var cfg = FASE_CFG[fase];
     if (fase === "sep") sepEnderecoAtivo = null;
-    var carregarPedido = sb.from("pedidos").select("id,id_externo,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single();
+    var carregarPedido = sb.from("pedidos").select("id,id_externo,canal,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single();
     var carregarEnderecosP = fase === "sep" ? sb.from("enderecos").select("id,codigo").eq("ativo", true) : Promise.resolve({ data: [] });
 
     Promise.all([carregarPedido, carregarEnderecosP]).then(function (results) {
@@ -1661,9 +1723,10 @@
       enderecosCache = results[1].data || [];
       var wrap = document.getElementById(cfg.wrapId);
       var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
-      var html = '<div class="card"><h2 class="op-title">Pedido <span class="mono">' + escapeHtml(pedido.id_externo) + '</span></h2>';
+      var html = '<div class="card"><div class="op-cab"><div><div class="canal">' + canalLabel(pedido.canal) + '</div><h2 class="op-title">Pedido ' + escapeHtml(pedido.id_externo) + '</h2></div><div class="op-prog" id="prog_' + fase + '"></div></div>';
       html += '<div class="scan-box">';
       if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
+      html += '<label for="scanInput_' + fase + '" class="scan-rot">' + (fase === "emb" ? "Bipe cada produto" : "Bipe o produto") + '</label>';
       html += '<input type="text" id="scanInput_' + fase + '" class="mono" placeholder="' + (fase === "sep" && ENDERECAMENTO ? "bipe o endereço ou o produto" : "bipe ou digite o código") + '" autocomplete="off" autocapitalize="off">';
       html += '<button class="btn primary btn-camera" id="btnCam_' + fase + '">📷 Usar câmera do celular</button>';
       html += '<div class="scan-hint">Leitor USB/Bluetooth funciona direto. Sem leitor, use a câmera ou digite e aperte Enter.</div></div>';
@@ -1710,6 +1773,12 @@
     var cfg = FASE_CFG[fase];
     var list = document.getElementById("itemsList_" + fase);
     list.innerHTML = "";
+    var prog = document.getElementById("prog_" + fase);
+    if (prog) {
+      var tot = itens.reduce(function (s, i) { return s + i.qtd; }, 0);
+      var feito = itens.reduce(function (s, i) { return s + Math.min(i[cfg.campo], i.qtd); }, 0);
+      prog.innerHTML = '<b>' + feito + ' de ' + tot + (fase === "emb" ? ' conferidos' : ' separados') + '</b><div class="trilho"><div style="width:' + (tot ? Math.round(feito / tot * 100) : 0) + '%"></div></div>';
+    }
     itens.forEach(function (it) {
       var done = it[cfg.campo] >= it.qtd;
       var row = document.createElement("div");
