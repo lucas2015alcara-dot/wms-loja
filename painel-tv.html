@@ -43,6 +43,8 @@
   .col.wait::after { content: ""; position: absolute; right: -14vw; bottom: -14vw; width: 34vw; height: 34vw; border-radius: 50%; border: 4.2vw solid #1A1A1A; opacity: .08; }
   /* A embalar: branco */
   .col.emb { background: #FFFFFF; color: #1A1A1A; border-color: transparent; }
+  .col.expedir { background: #FFFFFF; color: #1A1A1A; border-color: transparent; }
+  .col .sub2 { font-size: clamp(12px, 1vw, 18px); font-weight: 600; opacity: .7; margin-top: 4px; }
   /* Expedidos hoje: escuro com número branco e selo amarelo */
   .col.exp .label::before { content: ""; display: inline-block; width: .55em; height: .55em; border-radius: 50%; background: var(--yellow); margin-right: .45em; vertical-align: .05em; }
   /* Pendências: some quando zero, vira vermelho quando tem */
@@ -80,9 +82,15 @@
     <div class="label">A separar</div>
     <div class="fim"><div class="n" id="nWait">0</div><div class="obs">pedidos esperando<br>separação</div></div>
   </div>
-  <div class="col emb">
-    <div class="label">A embalar</div>
-    <div class="fim"><div class="n" id="nEmb">0</div><div class="obs">já separados,<br>na bancada</div></div>
+  <div class="lado">
+    <div class="col emb">
+      <div><div class="label">A embalar</div><div class="sub2">separados, na bancada</div></div>
+      <div class="n" id="nEmb">0</div>
+    </div>
+    <div class="col expedir">
+      <div><div class="label">A expedir</div><div class="sub2">embalados, esperando bipe</div></div>
+      <div class="n" id="nExpedir">0</div>
+    </div>
   </div>
   <div class="lado">
     <div class="col pend" id="colPend">
@@ -139,6 +147,7 @@
       (pedidosRes.data || []).forEach(function (r) { kv[r.status] = r.total; });
       setNum("nWait", kv.a_separar);
       setNum("nEmb", kv.separado);
+      setNum("nExpedir", kv.embalado); // embalados esperando a expedição
       setNum("nExp", expHojeRes.data || 0); // só os expedidos hoje (horário de Brasília)
 
       var pend = pendRes.data || 0;
