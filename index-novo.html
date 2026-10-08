@@ -443,6 +443,27 @@
   .prox-row.ocupado { cursor: default; opacity: .6; }
   .prox-row b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .prox-row span { font-size: 13px; color: var(--text-dim); }
+  /* ---------- Expedição v2 ---------- */
+  #view-expedicao { max-width: none; }
+  .exp-ultimo { margin-top: 14px; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
+  .exp-ultimo .rot { font-size: 13px; font-weight: 600; opacity: .85; }
+  .exp-ultimo b { font-size: 24px; font-weight: 800; font-stretch: 112%; line-height: 1.1; }
+  .exp-ultimo small { font-size: 14px; }
+  .exp-ultimo.vazio b { font-size: 17px; color: var(--text-dim); font-weight: 700; }
+  .exp-ultimo.ok { background: #1E6B3D; color: #FFFFFF; border-color: transparent; }
+  .exp-ultimo.err { background: #A3231A; color: #FFFFFF; border-color: transparent; }
+  .exp-ultimo.aviso { background: #FFCC00; color: #1A1A1A; border-color: transparent; }
+  .exp-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .exp-cab h2 { margin-bottom: 8px; }
+  .exp-num { font-size: 28px; font-weight: 800; font-stretch: 115%; font-variant-numeric: tabular-nums; }
+  .exp-trilho { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 2px 0 12px; }
+  .exp-trilho > div { height: 6px; background: var(--accent); border-radius: 999px; }
+  .exp-lin { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+  .exp-lin:last-child { border-bottom: none; }
+  .exp-lin .ponto { width: 10px; height: 10px; border-radius: 50%; background: #1E6B3D; flex: 0 0 10px; }
+  .exp-lin b { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .exp-lin span { flex: 1; font-size: 13px; color: var(--text-dim); }
+  .exp-lin time { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -580,15 +601,31 @@
     </div>
 
     <div class="view" id="view-expedicao">
-      <div class="card">
-        <h2>Bipar pedido pra expedir</h2>
-        <div class="scan-box">
-          <input type="text" id="scanInputExp" class="mono" placeholder="bipe o código do pedido" autocomplete="off" autocapitalize="off">
-          <button class="btn primary btn-camera" id="btnCamExp">📷 Usar câmera do celular</button>
-          <div class="scan-hint">Bipa a etiqueta do pedido (ML, Shopee, NF, etc.) — o pedido é expedido automaticamente se estiver na fila.</div>
+      <div class="op-layout">
+        <div class="op-main">
+          <div class="card">
+            <h2 class="op-title">Expedir</h2>
+            <div class="scan-box">
+              <label for="scanInputExp" class="scan-rot">Bipe o pacote</label>
+              <input type="text" id="scanInputExp" class="mono" placeholder="Aguardando leitura" autocomplete="off" autocapitalize="off">
+              <button class="btn primary btn-camera" id="btnCamExp">📷 Usar câmera do celular</button>
+              <div class="scan-hint">Bipe a etiqueta (ML, Shopee, NF etc.). Se o pedido estiver embalado, ele sai na hora.</div>
+            </div>
+            <div id="expUltimo" class="exp-ultimo vazio"><span class="rot">Última leitura</span><b>Nenhum pacote bipado ainda</b></div>
+          </div>
+          <div class="card">
+            <div class="exp-cab"><h2>Expedidos hoje</h2><span id="expHojeQtd" class="exp-num">0</span></div>
+            <div class="exp-trilho"><div id="expHojeBarra" style="width:0%"></div></div>
+            <div id="expHoje"><div class="empty">Carregando…</div></div>
+          </div>
         </div>
+        <aside class="op-lado">
+          <div class="card">
+            <div class="exp-cab"><h2>Prontos para expedir</h2><span id="expFilaQtd" class="exp-num">0</span></div>
+            <div id="expFila"><div class="empty">Carregando…</div></div>
+          </div>
+        </aside>
       </div>
-      <div class="card"><h2>Pedidos embalados — pronto pra expedir</h2><div id="expFila"></div></div>
     </div>
 
     <div class="view" id="view-enderecos">
@@ -1981,18 +2018,52 @@
 
   // ---------------- EXPEDIÇÃO ----------------
   var expInputWired = false;
+  function horaCurta(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  function setExpUltimo(tipo, titulo, sub) {
+    var el = document.getElementById("expUltimo");
+    if (!el) return;
+    el.className = "exp-ultimo " + tipo;
+    el.innerHTML = '<span class="rot">Última leitura</span><b>' + escapeHtml(titulo) + '</b>' + (sub ? '<small>' + escapeHtml(sub) + '</small>' : '');
+  }
+  var expProntosQtd = 0;
+  function atualizarBarraExp(hojeQtd) {
+    var barra = document.getElementById("expHojeBarra");
+    if (!barra) return;
+    var total = hojeQtd + expProntosQtd;
+    barra.style.width = (total ? Math.round(hojeQtd * 100 / total) : 0) + "%";
+  }
+  function carregarExpedidosHoje() {
+    var ini = new Date(); ini.setHours(0, 0, 0, 0);
+    sb.from("pedidos").select("id,id_externo,canal,expedido_em").eq("status", "expedido").gte("expedido_em", ini.toISOString()).order("expedido_em", { ascending: false }).limit(200).then(function (res) {
+      var el = document.getElementById("expHoje");
+      var lista = res.data || [];
+      document.getElementById("expHojeQtd").textContent = lista.length;
+      atualizarBarraExp(lista.length);
+      if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum pacote expedido hoje.</div>'; return; }
+      el.innerHTML = lista.slice(0, 30).map(function (o) {
+        return '<div class="exp-lin"><i class="ponto"></i><b>' + escapeHtml(o.id_externo) + '</b><span>' + canalLabel(o.canal) + '</span><time>' + horaCurta(o.expedido_em) + '</time></div>';
+      }).join("") + (lista.length > 30 ? '<div class="pn-obs" style="margin-top:8px">Mostrando os 30 mais recentes.</div>' : '');
+    });
+  }
   function carregarFilaExpedicao() {
     sb.from("pedidos").select("id,id_externo,canal,itens_pedido(qtd)").eq("status", "embalado").order("criado_em").then(function (res) {
       var el = document.getElementById("expFila");
       el.innerHTML = "";
       var lista = res.data || [];
+      expProntosQtd = lista.length;
+      document.getElementById("expFilaQtd").textContent = lista.length;
+      carregarExpedidosHoje();
       if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum pedido embalado aguardando expedição.</div>'; return; }
       lista.forEach(function (o) {
         var qtdTotal = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
         var row = document.createElement("div");
         row.className = "order-row";
         row.style.cursor = "default";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><button class="btn primary small" data-exp="' + o.id + '">marcar expedido</button>';
+        row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><button class="btn small" data-exp="' + o.id + '">expedir</button>';
         el.appendChild(row);
       });
       el.querySelectorAll("[data-exp]").forEach(function (btn) {
@@ -2023,6 +2094,7 @@
     sb.from("pedidos").update({ status: "expedido" }).eq("id", pedidoId).then(function (r) {
       if (r.error) { toast("Erro: " + r.error.message, "err"); return; }
       toast("Pedido expedido ✓", "ok");
+      setExpUltimo("ok", "Pedido expedido", "Marcado manualmente pela lista.");
       carregarFilaExpedicao();
       carregarContadores();
     });
@@ -2042,14 +2114,37 @@
         return achado || null;
       });
     }).then(function (pedido) {
-      if (!pedido) { toastScan("Pedido \"" + code + "\" não está na fila de expedição", "err"); return; }
+      if (!pedido) { explicarScanForaDaFila(code); return; }
       fecharCamera();
       toastScan("Pedido " + pedido.id_externo + " expedido ✓", "ok");
+      setExpUltimo("ok", "Pedido " + pedido.id_externo + " expedido", "Pode colocar na coleta.");
       sb.from("pedidos").update({ status: "expedido" }).eq("id", pedido.id).then(function (r) {
-        if (r.error) { toast("Erro: " + r.error.message, "err"); return; }
+        if (r.error) { setExpUltimo("err", "Erro ao expedir " + pedido.id_externo, r.error.message); toast("Erro: " + r.error.message, "err"); return; }
         carregarFilaExpedicao();
         carregarContadores();
       });
+    });
+  }
+
+  // quando o código não está entre os embalados: descobre se foi cancelado, já expedido ou ainda está em outra etapa
+  function explicarScanForaDaFila(code) {
+    var NOMES = { a_separar: "na separação", separado: "esperando embalagem" };
+    sb.rpc("situacao_pedido_por_codigo", { p_codigo: code }).then(function (r) {
+      var p = (r && r.data && r.data[0]) || null;
+      if (p && p.status === "cancelado") {
+        fecharCamera();
+        toastScan("Pedido " + p.id_externo + " CANCELADO: não envie", "err");
+        setExpUltimo("err", "Não envie: pedido " + p.id_externo + " cancelado", "Separe o pacote para devolução ao estoque.");
+      } else if (p && p.status === "expedido") {
+        toastScan("Pedido " + p.id_externo + " já foi expedido", "err");
+        setExpUltimo("aviso", "Pedido " + p.id_externo + " já foi expedido", p.expedido_em ? "Saiu às " + horaCurta(p.expedido_em) + (new Date(p.expedido_em).toDateString() === new Date().toDateString() ? "" : " de " + new Date(p.expedido_em).toLocaleDateString("pt-BR")) + ". Confira se não é etiqueta repetida." : "Confira se não é etiqueta repetida.");
+      } else if (p && NOMES[p.status]) {
+        toastScan("Pedido " + p.id_externo + " ainda não foi embalado", "err");
+        setExpUltimo("aviso", "Pedido " + p.id_externo + " ainda não foi embalado", "Ele está " + NOMES[p.status] + ". Volte com o pacote para a bancada.");
+      } else {
+        toastScan("Pedido \"" + code + "\" não está na fila de expedição", "err");
+        setExpUltimo("err", "Código não encontrado", "\"" + code + "\" não é de nenhum pedido embalado. Confira a etiqueta.");
+      }
     });
   }
 
