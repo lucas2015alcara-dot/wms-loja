@@ -1,0 +1,22 @@
+# Configuração das funções do servidor (Supabase Edge Functions).
+# verify_jwt = true  → só aceita chamadas de quem está logado no WMS.
+# olist-oauth fica aberta porque o Olist e o agendamento chamam ela de fora;
+# ela confere uma chave própria antes de fazer qualquer coisa.
+
+[functions.sincronizar-olist]
+verify_jwt = true
+
+[functions.gerenciar-usuarios]
+verify_jwt = true
+
+[functions.nota-pedido]
+verify_jwt = true
+
+[functions.catalogo-olist]
+verify_jwt = true
+
+[functions.loja-retirada]
+verify_jwt = true
+
+[functions.olist-oauth]
+verify_jwt = false
