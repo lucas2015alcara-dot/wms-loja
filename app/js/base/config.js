@@ -12,7 +12,8 @@ var PRODUCAO = [
   "wms-loja.onrender.com",      // Render (antigo, fica de reserva)
   "wms-pilchs-info.pages.dev",  // Cloudflare Pages (projeto ligado a pilchs-info/wms-loja)
   "wms-pilchs.pages.dev",       // Cloudflare Pages antigo (desligar depois)
-  "wms.pilchsinfo.com.br",      // domínio próprio (quando existir)
+  "wms.pilchs.com",             // domínio próprio da Pilchs (GoDaddy) — escolhido
+  "wms.pilchs.com.br",          // reserva, caso a empresa prefira o .com.br
 ];
 
 var AMBIENTES = {
