@@ -37,4 +37,4 @@ e mostra a faixa vermelha "AMBIENTE DE TESTE". Endereço novo de produção (ex.
 
 ## Histórico
 - 10/10/2026: virada do arquivo único para `app/` (Render). A versão antiga em arquivo único ainda está na raiz do repositório (`index.html`, `painel-tv.html`, `index-novo.html`); apagar após a semana de pedidos reais estável.
-- 12/10/2026: repositório transferido para a organização pilchs-info.
+- 12/10/2026: repositório transferido para a organização pilchs-info. App do cloudflare instalado na organização.
