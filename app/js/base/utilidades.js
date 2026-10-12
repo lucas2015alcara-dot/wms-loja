@@ -83,6 +83,6 @@ function escapeHtml(s) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
   });
 }
-function statusLabel(s) { return { a_separar: "A separar", separado: "Separado", embalado: "Embalado", expedido: "Expedido", cancelado: "Cancelado" }[s] || s; }
-function statusBadge(s) { return { a_separar: "wait", separado: "sep", embalado: "emb", expedido: "exp", cancelado: "cancel" }[s] || ""; }
-function canalLabel(c) { return { mercado_livre: "Mercado Livre", shopee: "Shopee", olist: "Olist", site_proprio: "Site próprio", outro: "Outro" }[c] || c; }
+function statusLabel(s) { return { a_separar: "A separar", separado: "Separado", embalado: "Embalado", expedido: "Expedido", cancelado: "Cancelado", pronto_lab: "Pronto p/ o lab", entregue_lab: "Entregue ao lab" }[s] || s; }
+function statusBadge(s) { return { a_separar: "wait", separado: "sep", embalado: "emb", expedido: "exp", cancelado: "cancel", pronto_lab: "emb", entregue_lab: "exp" }[s] || ""; }
+function canalLabel(c) { return { mercado_livre: "Mercado Livre", shopee: "Shopee", olist: "Olist", site_proprio: "Site próprio", outro: "Outro", laboratorio: "Laboratório" }[c] || c; }

@@ -548,3 +548,42 @@
 /* faixa fixa quando o site usa o banco de TESTE (js/iniciar.js) */
 .faixa-ambiente-teste { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 99999; background: #D7263D; color: #fff; font: 800 12px/1 Archivo, system-ui, sans-serif; letter-spacing: .06em; padding: 6px 14px; border-radius: 10px 10px 0 0; pointer-events: none; }
 @media (max-width: 760px) { .faixa-ambiente-teste { bottom: auto; top: 0; border-radius: 0 0 10px 10px; } }
+
+/* ---------- LABORATÓRIO (requisição de peças) ---------- */
+#view-laboratorio { max-width: none; }
+.selo-lab { display: inline-block; background: #1A1A1A; color: #FFCC00 !important; font-size: 11px; font-weight: 800; letter-spacing: .06em; border-radius: 6px; padding: 2px 6px; margin-right: 7px; vertical-align: 2px; }
+.op-title .selo-lab { font-size: 15px; padding: 3px 9px; vertical-align: 6px; }
+.order-row.lab, .prox-row.lab { box-shadow: inset 4px 0 0 var(--blue); }
+.lab-aviso { margin: -4px 0 14px; }
+.lab-linha { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.lab-linha:last-child { border-bottom: none; }
+.lab-linha .ret-tx { flex: 1; min-width: 0; }
+.lab-linha .ret-nome { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+.lab-linha .ret-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.lab-qtd { height: 40px; flex: none; }
+.lab-qtd button { width: 38px; height: 38px; font-size: 19px; }
+.lab-qtd input { width: 46px; font-size: 16px; }
+.lab-linha .rm { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 6px; flex: none; }
+.lab-req { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 12px; margin-top: 10px; }
+.lab-req.pronto { border: 2px solid var(--green); background: var(--done-bg); }
+.lab-req-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.lab-req-cab .oid { font-weight: 800; font-size: 16px; }
+.lab-req-cab .meta { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.trilho-lab { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 10px; }
+.trilho-lab > div { height: 6px; background: var(--blue); border-radius: 999px; }
+.lab-req details { margin-top: 8px; }
+.lab-req summary { font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.lab-itens { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13.5px; }
+.lab-itens li { display: flex; gap: 10px; padding: 3px 0; }
+.lab-itens li .q { min-width: 42px; color: var(--text-dim); }
+.lab-itens li.ok .q { color: var(--green); font-weight: 700; }
+.lab-acoes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.lab-acoes:empty { display: none; }
+.lab-tr-grupo { margin-top: 12px; }
+.lab-tr-cab { font-weight: 800; font-size: 14px; margin-bottom: 2px; }
+.lab-tr { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.lab-tr:last-child { border-bottom: none; }
+.lab-tr .ret-tx { flex: 1; min-width: 0; }
+.lab-tr .ret-nome { font-size: 14px; font-weight: 600; }
+.lab-tr .ret-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.lab-tr.volta .ret-nome { color: var(--accent-ink); }

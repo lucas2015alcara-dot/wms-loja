@@ -53,7 +53,7 @@ function linhaUsuario(u, eu) {
   var souEu = u.id === eu;
   var row = document.createElement("div");
   row.className = "usr-row" + (u.ativo === false ? " inativo" : "");
-  var papelLbl = u.papel === "admin" ? "Admin" : (u.papel === "operador" ? "Operador" : u.papel);
+  var papelLbl = { admin: "Admin", operador: "Operador", laboratorio: "Laboratório" }[u.papel] || u.papel;
   var acesso = u.ultimo_acesso ? "último acesso " + new Date(u.ultimo_acesso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca entrou";
   row.innerHTML =
     '<div class="usr-head"><div><div class="oid">' + escapeHtml(u.nome) + (souEu ? ' <span style="font-weight:500; color:var(--text-dim); font-size:13.5px">(você)</span>' : '') + '</div>' +
@@ -64,7 +64,7 @@ function linhaUsuario(u, eu) {
     '<div class="usr-edit">' +
       '<label>Nome</label><div class="row"><input type="text" data-f="nome" value="' + escapeHtml(u.nome) + '"><button class="btn ghost" data-a="nome" style="flex:0 0 auto">Salvar</button></div>' +
       (souEu ? '' :
-        '<label>Papel</label><div class="row"><select class="usr-select" data-f="papel"><option value="operador"' + (u.papel === "operador" ? " selected" : "") + '>Operador</option><option value="admin"' + (u.papel === "admin" ? " selected" : "") + '>Admin</option></select><button class="btn ghost" data-a="papel" style="flex:0 0 auto">Salvar</button></div>') +
+        '<label>Papel</label><div class="row"><select class="usr-select" data-f="papel"><option value="operador"' + (u.papel === "operador" ? " selected" : "") + '>Operador</option><option value="admin"' + (u.papel === "admin" ? " selected" : "") + '>Admin</option><option value="laboratorio"' + (u.papel === "laboratorio" ? " selected" : "") + '>Laboratório</option></select><button class="btn ghost" data-a="papel" style="flex:0 0 auto">Salvar</button></div>') +
       '<label>Nova senha</label><div class="row"><input type="text" class="mono" data-f="senha" autocomplete="off" autocapitalize="off" placeholder="mínimo 8 caracteres"><button class="btn ghost" data-a="gerar" style="flex:0 0 auto">Gerar</button><button class="btn primary" data-a="senha" style="flex:0 0 auto">Definir</button></div>' +
       (souEu ? '' : '<button class="btn ' + (u.ativo === false ? 'ghost' : 'danger') + '" data-a="ativo" style="margin-top:12px; width:100%">' + (u.ativo === false ? 'Reativar login' : 'Desativar login') + '</button>') +
       '<div class="usr-msg"></div>' +

@@ -14,7 +14,7 @@ var sepEnderecoAtivo = null;
 function renderFase(pedidoId, fase) {
   var cfg = FASE_CFG[fase];
   if (fase === "sep") sepEnderecoAtivo = null;
-  var carregarPedido = sb.from("pedidos").select("id,id_externo,canal,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))").eq("id", pedidoId).single();
+  var carregarPedido = sb.from("pedidos").select("id,id_externo,canal,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome)),lab_requisicoes(montagem)").eq("id", pedidoId).single();
   var carregarEnderecosP = fase === "sep" ? sb.from("enderecos").select("id,codigo").eq("ativo", true) : Promise.resolve({ data: [] });
 
   Promise.all([carregarPedido, carregarEnderecosP]).then(function (results) {
@@ -24,7 +24,9 @@ function renderFase(pedidoId, fase) {
     enderecosCache = results[1].data || [];
     var wrap = document.getElementById(cfg.wrapId);
     var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
-    var html = '<div class="card"><div class="op-cab"><div><div class="canal">' + canalLabel(pedido.canal) + '</div><h2 class="op-title">Pedido ' + escapeHtml(pedido.id_externo) + '</h2></div><div class="op-prog" id="prog_' + fase + '"></div></div>';
+    var ehLab = pedido.canal === "laboratorio";
+    var html = '<div class="card"><div class="op-cab"><div><div class="canal">' + (ehLab ? 'Requisição do laboratório' + (montagemLab(pedido) ? ' · ' + escapeHtml(montagemLab(pedido)) : '') : canalLabel(pedido.canal)) + '</div><h2 class="op-title">' + (ehLab ? seloLab(pedido) : 'Pedido ') + escapeHtml(pedido.id_externo) + '</h2></div><div class="op-prog" id="prog_' + fase + '"></div></div>';
+    if (ehLab && fase === "sep") html += '<div class="ret-box aviso lab-aviso">Cada peça bipada <b>sai de Vendas Avulsas e vai para Kits</b> na hora. No fim, leve as peças ao laboratório.</div>';
     html += '<div class="scan-box">';
     if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
     if (fase === "emb") html += '<label for="scanInput_' + fase + '" class="scan-rot">Bipe cada produto</label>';
@@ -61,6 +63,16 @@ function renderFase(pedidoId, fase) {
 
 function concluirFase(pedido, fase) {
   var cfg = FASE_CFG[fase];
+  if (fase === "sep" && pedido.canal === "laboratorio") {
+    // LAB não vai para a embalagem: fica "pronto para o laboratório" até o lab confirmar o recebimento
+    sb.rpc("lab_concluir_separacao", { p_pedido_id: pedido.id }).then(function (r) {
+      if (r.error) { toast("Erro ao concluir: " + r.error.message, "err"); return; }
+      fecharCamera();
+      toast(pedido.id_externo + " separada ✓ Leve as peças ao laboratório.", "ok");
+      cfg.voltar();
+    });
+    return;
+  }
   sb.from("pedidos").update({ status: cfg.proximoStatus, reservado_por: null, reservado_em: null }).eq("id", pedido.id).then(function (r) {
     if (r.error) { toast("Erro ao concluir: " + r.error.message, "err"); return; }
     fecharCamera();
@@ -212,7 +224,7 @@ function aplicarIncrementoItem(pedido, item, fase) {
       toastScan(escapeHtml(item.produtos.nome) + " ✓ último item — concluindo pedido...", "ok");
       concluirFase(pedido, fase);
     } else {
-      toastScan(escapeHtml(item.produtos.nome) + " ✓ " + novoValor + "/" + item.qtd, "ok");
+      toastScan(escapeHtml(item.produtos.nome) + " ✓ " + novoValor + "/" + item.qtd + (fase === "sep" && pedido.canal === "laboratorio" ? " · Avulsas → Kits" : ""), "ok");
     }
   });
 }

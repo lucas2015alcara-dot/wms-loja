@@ -11,11 +11,24 @@ function idadeTexto(iso) {
   var h = Math.floor(min / 60), m = min % 60;
   return h + " h" + (m ? " " + m : "");
 }
+// requisições do laboratório (LAB nn) furam a fila: aparecem sempre no topo
+function ordenarFilaSep(lista) {
+  return lista.slice().sort(function (a, b) {
+    var la = a.canal === "laboratorio" ? 0 : 1, lb = b.canal === "laboratorio" ? 0 : 1;
+    return la - lb || new Date(a.criado_em) - new Date(b.criado_em);
+  });
+}
+function seloLab(o) { return o.canal === "laboratorio" ? '<span class="selo-lab">LAB</span>' : ""; }
+function montagemLab(o) {
+  var r = Array.isArray(o.lab_requisicoes) ? o.lab_requisicoes[0] : o.lab_requisicoes;
+  return r && r.montagem ? r.montagem : "";
+}
+
 function carregarSepProximos() {
   var el = document.getElementById("sepProximos");
   if (!el) return;
-  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em").limit(30).then(function (res) {
-    var lista = res.data || [];
+  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").order("criado_em").limit(30).then(function (res) {
+    var lista = ordenarFilaSep(res.data || []);
     if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido esperando separação.</div>'; return; }
     el.innerHTML = "";
     lista.forEach(function (o) {
@@ -23,8 +36,8 @@ function carregarSepProximos() {
       var ocupado = reservaAtivaDeOutro(o);
       var velho = !ocupado && o.id !== sepAtivoId && (Date.now() - new Date(o.criado_em).getTime()) > 2 * 3600 * 1000;
       var row = document.createElement("div");
-      row.className = "prox-row" + (o.id === sepAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "");
-      row.innerHTML = '<div><b>' + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div>' +
+      row.className = "prox-row" + (o.id === sepAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "") + (o.canal === "laboratorio" ? " lab" : "");
+      row.innerHTML = '<div><b>' + seloLab(o) + escapeHtml(o.id_externo) + '</b><br><span>' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") : canalLabel(o.canal)) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div>' +
         '<span class="idade' + (velho ? ' velho' : '') + '">' + (ocupado ? 'em uso' : (o.id === sepAtivoId ? 'aberto' : idadeTexto(o.criado_em))) + '</span>';
       if (ocupado && meu.papel === "admin") {
         row.title = "Em uso por outra pessoa. Clique para liberar.";
@@ -71,17 +84,17 @@ function mostrarModoSep(modo) {
 }
 
 function carregarFilaSeparacaoLista() {
-  sb.from("pedidos").select("id,id_externo,canal,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em").then(function (res) {
+  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").order("criado_em").then(function (res) {
     var el = document.getElementById("sepFila");
     el.innerHTML = "";
-    var lista = res.data || [];
+    var lista = ordenarFilaSep(res.data || []);
     if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhum pedido aguardando separação.</div>'; return; }
     lista.forEach(function (o) {
       var qtdTotal = (o.itens_pedido || []).reduce(function (s, i) { return s + i.qtd; }, 0);
       var row = document.createElement("div");
-      row.className = "order-row";
+      row.className = "order-row" + (o.canal === "laboratorio" ? " lab" : "");
       var ocupado = reservaAtivaDeOutro(o);
-      row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.' + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div>' +
+      row.innerHTML = '<div><div class="oid">' + seloLab(o) + escapeHtml(o.id_externo) + '</div><div class="meta">' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") + ' · prioridade' : canalLabel(o.canal)) + ' · ' + qtdTotal + ' un.' + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div>' +
         (ocupado
           ? '<div class="acoes">' + (meu.papel === "admin" ? '<button class="btn small" data-liberar="1">Liberar</button>' : '') + '<span class="badge exp">em uso</span></div>'
           : '<span class="badge wait">iniciar →</span>');
@@ -111,8 +124,9 @@ function abrirSeparacao(pedidoId) {
 // ---------------- SEPARAÇÃO EM LOTE (pedidos com 1 único item e 1 unidade) ----------------
 function carregarLotesSimples() {
   sb.from("pedidos")
-    .select("id,id_externo,criado_em,itens_pedido(id,produto_id,qtd,qtd_separada,produtos(sku,nome))")
+    .select("id,id_externo,canal,criado_em,itens_pedido(id,produto_id,qtd,qtd_separada,produtos(sku,nome))")
     .eq("status", "a_separar")
+    .neq("canal", "laboratorio") // requisição do lab é separada pedido por pedido (cada bip transfere a peça)
     .order("criado_em")
     .then(function (res) {
       var el = document.getElementById("sepLoteLista");

@@ -45,6 +45,7 @@
   /* A embalar: branco */
   .col.emb { background: #FFFFFF; color: #1A1A1A; border-color: transparent; }
   .col.expedir { background: #FFFFFF; color: #1A1A1A; border-color: transparent; }
+  .lab-tv { display: inline-block; margin-top: 10px; background: #1A1A1A; color: var(--yellow); border-radius: 999px; padding: 6px 14px; font-size: clamp(14px, 1.4vw, 26px); font-weight: 800; opacity: 1; }
   .col .sub2 { font-size: clamp(12px, 1vw, 18px); font-weight: 600; opacity: .7; margin-top: 4px; }
   /* Expedidos hoje: escuro com número branco e selo amarelo */
   .col.exp .label::before { content: ""; display: inline-block; width: .55em; height: .55em; border-radius: 50%; background: var(--yellow); margin-right: .45em; vertical-align: .05em; }
@@ -80,7 +81,7 @@
 
 <div class="board">
   <div class="col wait">
-    <div class="label">A separar</div>
+    <div><div class="label">A separar</div><div class="lab-tv" id="labTv" style="display:none"></div></div>
     <div class="fim"><div class="n" id="nWait">0</div><div class="obs">pedidos esperando<br>separação</div></div>
   </div>
   <div class="lado">
@@ -148,6 +149,14 @@
       setNum("nEmb", kv.separado);
       setNum("nExpedir", kv.embalado); // embalados esperando a expedição
       setNum("nExp", expHojeRes.data || 0); // só os expedidos hoje (horário de Brasília)
+
+      // requisições do laboratório: vão na frente da fila
+      sb.rpc("contagem_lab").then(function (r) {
+        var el = document.getElementById("labTv");
+        var n = r.error || !r.data ? 0 : (r.data.a_separar || 0);
+        el.textContent = n === 1 ? "1 é do laboratório" : n + " são do laboratório";
+        el.style.display = n > 0 ? "" : "none";
+      });
 
       var pend = pendRes.data || 0;
       setNum("nPend", pend);

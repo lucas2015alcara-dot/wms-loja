@@ -49,6 +49,13 @@ function painelExtras() {
     sb.from("retiradas_loja").select("id", { count: "exact", head: true }).eq("status", "aberta").then(function (r) {
       if (!r.error) { linhas.push(["Retiradas da loja abertas", r.count || 0]); desenhar(); }
     });
+    sb.rpc("contagem_lab").then(function (r) {
+      if (r.error || !r.data) return;
+      linhas.push(["Requisições do laboratório na fila", r.data.a_separar || 0]);
+      linhas.push(["Prontas para o laboratório retirar", r.data.pronto || 0]);
+      if (meu.papel === "admin") linhas.push(["Transferências Avulsas → Kits a fazer no Olist", r.data.transf_pendentes || 0]);
+      desenhar();
+    });
     if (meu.papel === "admin") {
       sb.from("devolucoes").select("id", { count: "exact", head: true }).is("decidido_em", null).then(function (r) {
         if (!r.error) { linhas.push(["Devoluções aguardando decisão", r.count || 0]); desenhar(); }

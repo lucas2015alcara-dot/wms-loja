@@ -7,7 +7,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const PAPEIS = ["admin", "operador"];
+const PAPEIS = ["admin", "operador", "laboratorio"];
 const BAN_INATIVO = "876000h"; // ~100 anos
 
 function json(body: unknown, status = 200) {

@@ -356,6 +356,7 @@
         <select id="usrPapel" class="usr-select">
           <option value="operador">Operador — separa, embala, expede e mexe no estoque</option>
           <option value="admin">Admin — tudo, inclusive cancelar pedidos e gerenciar logins</option>
+          <option value="laboratorio">Laboratório — só faz requisições de peças e confirma o recebimento</option>
         </select>
         <label for="usrSenha">Senha (mínimo 8 caracteres)</label>
         <div class="row">
@@ -432,6 +433,60 @@
           <div class="card">
             <h2>Encerradas (recentes)</h2>
             <div id="retFechadas"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="view" id="view-laboratorio">
+      <div class="op-layout">
+        <div class="op-main">
+          <div class="card" id="labCardNova">
+            <h2 class="op-title">Requisição de peças</h2>
+            <div class="scan-box">
+              <label for="labBusca" class="scan-rot">Qual peça o laboratório precisa?</label>
+              <div class="row ret-busca">
+                <input type="text" id="labBusca" autocomplete="off" placeholder="Nome, SKU ou código de barras">
+                <button class="btn primary" id="labBuscar" style="flex:0 0 auto">Buscar</button>
+              </div>
+              <button class="btn primary btn-camera" id="labCamBtn">📷 Usar câmera do celular</button>
+              <div class="scan-hint" id="labBuscaMsg" style="text-align:left"></div>
+            </div>
+            <div class="ret-res" id="labRes"></div>
+
+            <div class="ret-campo">
+              <span class="ret-rot">Peças da requisição <span id="labListaQtd" class="ret-cont"></span></span>
+              <div id="labLista"></div>
+            </div>
+            <div class="ret-campo">
+              <label class="ret-rot" for="labMontagem">Para qual montagem? (opcional)</label>
+              <input type="text" id="labMontagem" maxlength="200" autocomplete="off" placeholder="Ex: PC gamer cliente João, OS 1234">
+            </div>
+            <div class="ret-nota">A requisição entra no <b>topo da fila de separação</b> como LAB nn. Cada peça sai de <b>Vendas Avulsas</b> e vai para <b>Kits e PCs montados</b> no momento em que o estoque bipa.</div>
+            <div class="ret-box" id="labMsg" style="display:none"></div>
+            <button class="btn primary btn-grande" id="labEnviar" disabled>Enviar requisição</button>
+          </div>
+          <div class="card" id="labCardTransf" style="display:none">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap">
+              <h2 style="margin:0">Transferências no Olist <span id="labTransfQtd" class="ret-cont"></span></h2>
+              <button class="btn ghost small" id="labMarcarTodas" style="display:none">Marcar todas como feitas</button>
+            </div>
+            <div class="ret-box aviso" id="labIntegracao" style="margin-bottom:6px">Carregando…</div>
+            <div id="labTransf"></div>
+          </div>
+        </div>
+        <aside class="op-lado">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <h2 style="margin:0">Em andamento <span id="labAbertasQtd" class="ret-cont"></span></h2>
+              <button class="btn ghost small" id="labAtualizar">Atualizar</button>
+            </div>
+            <div class="pn-obs" style="margin:6px 0 8px">Quando aparecer <b>Pronto para retirar</b>, pegue as peças com o estoque e toque em <b>Confirmar recebimento</b>.</div>
+            <div id="labAbertas"></div>
+          </div>
+          <div class="card">
+            <h2>Recentes (7 dias)</h2>
+            <div id="labFechadas"></div>
           </div>
         </aside>
       </div>
@@ -602,6 +657,7 @@
 <script src="js/modulos/gestao/usuarios.js"></script>
 <script src="js/modulos/loja/retirada.js"></script>
 <script src="js/modulos/loja/catalogo.js"></script>
+<script src="js/modulos/laboratorio/laboratorio.js"></script>
 <script src="js/modulos/estoque/enderecamento.js"></script>
 <script src="js/iniciar.js"></script>
 </body>

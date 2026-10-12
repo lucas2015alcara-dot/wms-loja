@@ -62,7 +62,7 @@ function carregarPerfilEIniciar() {
       document.getElementById("loginScreen").style.display = "none";
       document.getElementById("appShell").style.display = "flex";
       document.getElementById("hUser").textContent = meu.nome;
-      document.getElementById("hPapel").textContent = { admin: "Admin", operador: "Operador", separador: "Separador", embalador: "Embalador", expedicao: "Expedição" }[meu.papel] || meu.papel;
+      document.getElementById("hPapel").textContent = { admin: "Admin", operador: "Operador", separador: "Separador", embalador: "Embalador", expedicao: "Expedição", laboratorio: "Laboratório" }[meu.papel] || meu.papel;
       document.getElementById("cardSyncOlist").style.display = meu.papel === "admin" ? "" : "none";
       // operador usa Endereços e Devoluções, mas criar endereço e decidir devolução é do admin
       document.getElementById("cardNovoEndereco").style.display = meu.papel === "admin" ? "" : "none";
