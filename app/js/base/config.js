@@ -1,10 +1,18 @@
 "use strict";
 // WMS Pilchs — js/base/config.js
-// Escolhe o banco (Supabase) conforme o endereço do site:
-//   wms-loja-teste.onrender.com, localhost ou ?ambiente=teste  → banco de TESTE
-//   qualquer outro (wms-loja.onrender.com)                     → banco de PRODUÇÃO
+// Escolhe o banco (Supabase) conforme o endereço do site.
+// REGRA DE SEGURANÇA: só os endereços da lista PRODUCAO usam o banco de produção.
+// Qualquer outro endereço (site de teste, prévias do Cloudflare, localhost, um endereço novo
+// que alguém esqueceu de cadastrar) cai no banco de TESTE e mostra a faixa vermelha.
+// Endereço novo de produção (ex.: domínio próprio) → acrescentar na lista abaixo.
 // As chaves abaixo são "publicáveis": feitas para ficar no navegador. A proteção dos
 // dados está nas regras do banco (RLS), não em esconder estas chaves.
+
+var PRODUCAO = [
+  "wms-loja.onrender.com",      // Render (antigo, fica de reserva)
+  "wms-pilchs.pages.dev",       // Cloudflare Pages
+  "wms.pilchsinfo.com.br",      // domínio próprio (quando existir)
+];
 
 var AMBIENTES = {
   producao: {
@@ -18,10 +26,8 @@ var AMBIENTES = {
 };
 
 var AMBIENTE = (function () {
-  var host = location.hostname;
-  if (/wms-loja-teste/.test(host) || host === "localhost" || host === "127.0.0.1" || host === "") return "teste";
   if (/[?&]ambiente=teste\b/.test(location.search)) return "teste";
-  return "producao";
+  return PRODUCAO.indexOf(location.hostname.toLowerCase()) >= 0 ? "producao" : "teste";
 })();
 
 var SUPABASE_URL = AMBIENTES[AMBIENTE].url;
