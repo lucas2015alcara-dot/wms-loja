@@ -11,6 +11,7 @@ function tentarReservarPedido(pedidoId, statusEsperado, cb) {
     .update({ reservado_por: meu.id, reservado_em: new Date().toISOString() })
     .eq("id", pedidoId)
     .eq("status", statusEsperado)
+    .eq("em_ocorrencia", false)
     .or("reservado_por.is.null,reservado_por.eq." + meu.id + ",reservado_em.lt." + limite)
     .select("id")
     .then(function (res) {

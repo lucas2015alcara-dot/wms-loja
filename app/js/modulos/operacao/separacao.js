@@ -13,12 +13,25 @@ function idadeTexto(iso) {
 }
 // requisições do laboratório (LAB nn) furam a fila: aparecem sempre no topo
 function ordenarFilaSep(lista) {
+  // 1º: pedidos que voltaram de um problema (já começados) · 2º: laboratório · depois: mais antigos
   return lista.slice().sort(function (a, b) {
+    var va = a.volta_em ? 0 : 1, vb = b.volta_em ? 0 : 1;
     var la = a.canal === "laboratorio" ? 0 : 1, lb = b.canal === "laboratorio" ? 0 : 1;
-    return la - lb || new Date(a.criado_em) - new Date(b.criado_em);
+    return va - vb || la - lb || new Date(a.criado_em) - new Date(b.criado_em);
   });
 }
-function seloLab(o) { return o.canal === "laboratorio" ? '<span class="selo-lab">LAB</span>' : ""; }
+function seloLab(o) { return (o.volta_em ? '<span class="selo-volta">VOLTOU</span>' : "") + (o.canal === "laboratorio" ? '<span class="selo-lab">LAB</span>' : ""); }
+// linha extra: o que o admin decidiu + com quem está reservado
+function infoVolta(o) {
+  var partes = [];
+  if (o.volta_aviso) partes.push(escapeHtml(o.volta_aviso));
+  var res = (o.volta_em || o.reservado_por) && reservaAtivaQualquer(o) ? textoReserva(o) : "";
+  if (res) partes.push(res);
+  return partes.length ? '<div class="volta-linha">' + partes.join(" · ") + '</div>' : "";
+}
+function reservaAtivaQualquer(o) {
+  return o.reservado_por && o.reservado_em && (Date.now() - new Date(o.reservado_em).getTime()) < RESERVA_MIN * 60 * 1000;
+}
 function montagemLab(o) {
   var r = Array.isArray(o.lab_requisicoes) ? o.lab_requisicoes[0] : o.lab_requisicoes;
   return r && r.montagem ? r.montagem : "";
@@ -27,7 +40,7 @@ function montagemLab(o) {
 function carregarSepProximos() {
   var el = document.getElementById("sepProximos");
   if (!el) return;
-  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").order("criado_em").limit(30).then(function (res) {
+  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,volta_aviso,volta_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").eq("em_ocorrencia", false).order("criado_em").limit(30).then(function (res) {
     var lista = ordenarFilaSep(res.data || []);
     if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido esperando separação.</div>'; return; }
     el.innerHTML = "";
@@ -37,12 +50,12 @@ function carregarSepProximos() {
       var velho = !ocupado && o.id !== sepAtivoId && (Date.now() - new Date(o.criado_em).getTime()) > 2 * 3600 * 1000;
       var row = document.createElement("div");
       row.className = "prox-row" + (o.id === sepAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "") + (o.canal === "laboratorio" ? " lab" : "");
-      row.innerHTML = '<div><b>' + seloLab(o) + escapeHtml(o.id_externo) + '</b><br><span>' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") : canalLabel(o.canal)) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div>' +
+      row.innerHTML = '<div><b>' + seloLab(o) + escapeHtml(o.id_externo) + '</b><br><span>' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") : canalLabel(o.canal)) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span>' + infoVolta(o) + '</div>' +
         '<span class="idade' + (velho ? ' velho' : '') + '">' + (ocupado ? 'em uso' : (o.id === sepAtivoId ? 'aberto' : idadeTexto(o.criado_em))) + '</span>';
       if (ocupado && meu.papel === "admin") {
-        row.title = "Em uso por outra pessoa. Clique para liberar.";
+        row.title = "Com outra pessoa. Clique para passar o pedido ou liberar.";
         row.style.cursor = "pointer";
-        row.addEventListener("click", function () { liberarReservaAdmin(o.id, carregarSepProximos); });
+        row.addEventListener("click", function () { abrirTransferencia(o); });
       } else if (!ocupado && o.id !== sepAtivoId) {
         row.addEventListener("click", function () {
           if (sepAtivoId) liberarReservaPedido(sepAtivoId);
@@ -84,7 +97,7 @@ function mostrarModoSep(modo) {
 }
 
 function carregarFilaSeparacaoLista() {
-  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").order("criado_em").then(function (res) {
+  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,volta_aviso,volta_em,itens_pedido(qtd),lab_requisicoes(montagem)").eq("status", "a_separar").eq("em_ocorrencia", false).order("criado_em").then(function (res) {
     var el = document.getElementById("sepFila");
     el.innerHTML = "";
     var lista = ordenarFilaSep(res.data || []);
@@ -94,13 +107,15 @@ function carregarFilaSeparacaoLista() {
       var row = document.createElement("div");
       row.className = "order-row" + (o.canal === "laboratorio" ? " lab" : "");
       var ocupado = reservaAtivaDeOutro(o);
-      row.innerHTML = '<div><div class="oid">' + seloLab(o) + escapeHtml(o.id_externo) + '</div><div class="meta">' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") + ' · prioridade' : canalLabel(o.canal)) + ' · ' + qtdTotal + ' un.' + (ocupado ? ' · em uso por outra pessoa' : '') + '</div></div>' +
+      row.innerHTML = '<div><div class="oid">' + seloLab(o) + escapeHtml(o.id_externo) + '</div><div class="meta">' + (o.canal === "laboratorio" ? escapeHtml(montagemLab(o) || "Laboratório") + ' · prioridade' : canalLabel(o.canal)) + ' · ' + qtdTotal + ' un.' + (ocupado && !o.volta_em ? ' · em uso por outra pessoa' : '') + '</div>' + infoVolta(o) + '</div>' +
         (ocupado
-          ? '<div class="acoes">' + (meu.papel === "admin" ? '<button class="btn small" data-liberar="1">Liberar</button>' : '') + '<span class="badge exp">em uso</span></div>'
-          : '<span class="badge wait">iniciar →</span>');
+          ? '<div class="acoes">' + (meu.papel === "admin" ? '<button class="btn small" data-passar="1">Passar</button><button class="btn small" data-liberar="1">Liberar</button>' : '') + '<span class="badge exp">' + (o.volta_em ? 'reservado' : 'em uso') + '</span></div>'
+          : '<span class="badge wait">' + (o.volta_em && o.reservado_por === meu.id ? 'continuar →' : 'iniciar →') + '</span>');
       if (ocupado) {
         var bl = row.querySelector("[data-liberar]");
         if (bl) bl.addEventListener("click", function (e) { e.stopPropagation(); liberarReservaAdmin(o.id, carregarFilaSeparacaoLista); });
+        var bp = row.querySelector("[data-passar]");
+        if (bp) bp.addEventListener("click", function (e) { e.stopPropagation(); abrirTransferencia(o); });
         row.addEventListener("click", function () { toast("Esse pedido está aberto com outra pessoa.", "err"); });
       } else {
         row.addEventListener("click", function () { abrirSeparacao(o.id); });
@@ -126,6 +141,7 @@ function carregarLotesSimples() {
   sb.from("pedidos")
     .select("id,id_externo,canal,criado_em,itens_pedido(id,produto_id,qtd,qtd_separada,produtos(sku,nome))")
     .eq("status", "a_separar")
+    .eq("em_ocorrencia", false)
     .neq("canal", "laboratorio") // requisição do lab é separada pedido por pedido (cada bip transfere a peça)
     .order("criado_em")
     .then(function (res) {

@@ -14,18 +14,25 @@ var sepEnderecoAtivo = null;
 function renderFase(pedidoId, fase) {
   var cfg = FASE_CFG[fase];
   if (fase === "sep") sepEnderecoAtivo = null;
-  var carregarPedido = sb.from("pedidos").select("id,id_externo,canal,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome)),lab_requisicoes(montagem)").eq("id", pedidoId).single();
+  var carregarPedido = sb.from("pedidos").select("id,id_externo,canal,status,em_ocorrencia,volta_aviso,volta_em,itens_pedido(id,produto_id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome)),lab_requisicoes(montagem)").eq("id", pedidoId).single();
   var carregarEnderecosP = fase === "sep" ? sb.from("enderecos").select("id,codigo").eq("ativo", true) : Promise.resolve({ data: [] });
 
   Promise.all([carregarPedido, carregarEnderecosP]).then(function (results) {
     var res = results[0];
     if (res.error || !res.data) { toast("Erro ao carregar pedido", "err"); return; }
     var pedido = res.data;
+    if (pedido.em_ocorrencia) { toast("Esse pedido tem um problema em aberto: aguardando admin.", "err"); liberarReservaPedido(pedido.id); cfg.voltar(); return; }
     enderecosCache = results[1].data || [];
     var wrap = document.getElementById(cfg.wrapId);
     var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
     var ehLab = pedido.canal === "laboratorio";
     var html = '<div class="card"><div class="op-cab"><div><div class="canal">' + (ehLab ? 'Requisição do laboratório' + (montagemLab(pedido) ? ' · ' + escapeHtml(montagemLab(pedido)) : '') : canalLabel(pedido.canal)) + '</div><h2 class="op-title">' + (ehLab ? seloLab(pedido) : 'Pedido ') + escapeHtml(pedido.id_externo) + '</h2></div><div class="op-prog" id="prog_' + fase + '"></div></div>';
+    if (pedido.volta_aviso) {
+      var feitoV = pedido.itens_pedido.reduce(function (s, i) { return s + Math.min(i[cfg.campo], i.qtd); }, 0);
+      var totV = pedido.itens_pedido.reduce(function (s, i) { return s + i.qtd; }, 0);
+      html += '<div class="ret-box aviso volta-aviso"><b>Voltou do admin:</b> ' + escapeHtml(pedido.volta_aviso) +
+        (feitoV > 0 ? '<br>Já ' + (fase === "sep" ? "separado" : "conferido") + ' ' + feitoV + ' de ' + totV + '. <b>Os itens estão na caixa de pendências.</b>' : '') + '</div>';
+    }
     if (ehLab && fase === "sep") html += '<div class="ret-box aviso lab-aviso">Cada peça bipada <b>sai de Vendas Avulsas e vai para Kits</b> na hora. No fim, leve as peças ao laboratório.</div>';
     html += '<div class="scan-box">';
     if (fase === "sep") html += '<div id="endAtivo_sep" class="scan-hint" style="margin-bottom:8px; font-weight:600">' + (ENDERECAMENTO ? "📍 Bipe o endereço antes do produto" : "Sem endereçamento: bipe só o produto") + '</div>';
@@ -34,10 +41,10 @@ function renderFase(pedidoId, fase) {
     html += '<button class="btn primary btn-camera" id="btnCam_' + fase + '">📷 Usar câmera do celular</button>';
     html += '<div class="scan-hint">Leitor USB/Bluetooth funciona direto. Sem leitor, use a câmera ou digite e aperte Enter.</div></div>';
     html += '<div id="itemsList_' + fase + '"></div>';
-    html += '<div class="row" style="margin-top:12px"><button class="btn ghost" id="voltar_' + fase + '" style="width:100%">← voltar à fila</button></div></div>';
+    html += '<div class="row" style="margin-top:12px"><button class="btn ghost" id="voltar_' + fase + '" style="width:100%">← voltar à fila</button><button class="btn ghost" id="probPed_' + fase + '" style="width:100%">⚠ Problema no pedido</button></div></div>';
     wrap.innerHTML = html;
 
-    renderItensFase(pedido.itens_pedido, fase);
+    renderItensFase(pedido.itens_pedido, fase, pedido);
     if (allDone) { concluirFase(pedido, fase); return; }
 
     document.getElementById("voltar_" + fase).addEventListener("click", function () {
@@ -46,6 +53,9 @@ function renderFase(pedidoId, fase) {
     });
     document.getElementById("btnCam_" + fase).addEventListener("click", function () {
       abrirCamera(function (code) { handleScan(pedido, code, fase); });
+    });
+    document.getElementById("probPed_" + fase).addEventListener("click", function () {
+      abrirReporte(pedido, fase === "sep" ? "separacao" : "embalagem", null, function () { if (fase === "sep") sepAtivoId = null; else embAtivoId = null; cfg.voltar(); });
     });
 
     var input = document.getElementById("scanInput_" + fase);
@@ -82,7 +92,7 @@ function concluirFase(pedido, fase) {
   });
 }
 
-function renderItensFase(itens, fase) {
+function renderItensFase(itens, fase, pedido) {
   var cfg = FASE_CFG[fase];
   var list = document.getElementById("itemsList_" + fase);
   list.innerHTML = "";
@@ -104,12 +114,19 @@ function renderItensFase(itens, fase) {
       '<div class="top"><div><div class="name">' + escapeHtml(it.produtos.nome) + '</div><div class="sku mono">' + skuTxt(it.produtos.sku) + '</div></div>' +
       '<div class="qty"><span class="' + (done ? "done-c" : "") + '">' + it[cfg.campo] + '</span> / ' + it.qtd + '</div></div>' +
       '<div class="sku mono" id="locais_' + fase + '_' + it.id + '"></div>' +
-      (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">' + (fase === "sep" ? "reportar falta de estoque" : "reportar problema") + '</button>');
+      (done ? '' : '<button class="alerta-btn" data-item="' + it.id + '">⚠ problema com este item</button>');
     list.appendChild(row);
     if (fase === "sep" && !done && ENDERECAMENTO) carregarLocaisItem(it, fase);
   });
   list.querySelectorAll(".alerta-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () { reportarAlerta(btn.dataset.item, btn, fase); });
+    btn.addEventListener("click", function () {
+      var it = itens.find(function (x) { return x.id === btn.dataset.item; });
+      if (!pedido) return;
+      abrirReporte(pedido, fase === "sep" ? "separacao" : "embalagem", it, function () {
+        if (fase === "sep") sepAtivoId = null; else embAtivoId = null;
+        FASE_CFG[fase].voltar();
+      });
+    });
   });
 }
 
@@ -121,15 +138,6 @@ function carregarLocaisItem(item, fase) {
     if (lista.length === 0) { el.textContent = "📍 sem endereço com estoque cadastrado"; return; }
     // um endereço por linha, sem quebrar no meio do código (ex.: "Rua 01 - PP3 - A2")
     el.innerHTML = lista.map(function (r) { return '<span style="white-space:nowrap">📍 ' + escapeHtml(r.enderecos.codigo) + " (" + r.quantidade + ")</span>"; }).join("<br>");
-  });
-}
-
-function reportarAlerta(itemId, btnEl, fase) {
-  var origem = fase === "emb" ? "embalagem" : "separacao";
-  sb.from("alertas_estoque").insert({ item_id: itemId, reportado_por: meu.id, origem: origem }).then(function (res) {
-    if (res.error) { toast("Erro ao reportar: " + res.error.message, "err"); return; }
-    toast("Reportado ao admin", "ok");
-    btnEl.outerHTML = '<div class="alerta-tag">⚠ ' + (origem === "embalagem" ? "problema reportado" : "falta reportada") + '</div>';
   });
 }
 
@@ -218,7 +226,7 @@ function aplicarIncrementoItem(pedido, item, fase) {
       fecharEvento(item.id, cfg.tipo);
     }
 
-    renderItensFase(pedido.itens_pedido, fase);
+    renderItensFase(pedido.itens_pedido, fase, pedido);
     var allDone = pedido.itens_pedido.every(function (i) { return i[cfg.campo] >= i.qtd; });
     if (allDone) {
       toastScan(escapeHtml(item.produtos.nome) + " ✓ último item — concluindo pedido...", "ok");

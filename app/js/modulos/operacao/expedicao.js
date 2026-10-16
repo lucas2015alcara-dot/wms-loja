@@ -36,7 +36,7 @@ function carregarExpedidosHoje() {
   });
 }
 function carregarFilaExpedicao() {
-  sb.from("pedidos").select("id,id_externo,canal,itens_pedido(qtd)").eq("status", "embalado").order("criado_em").then(function (res) {
+  sb.from("pedidos").select("id,id_externo,canal,volta_aviso,volta_em,itens_pedido(qtd)").eq("status", "embalado").eq("em_ocorrencia", false).order("criado_em").then(function (res) {
     var el = document.getElementById("expFila");
     el.innerHTML = "";
     var lista = res.data || [];
@@ -49,7 +49,7 @@ function carregarFilaExpedicao() {
       var row = document.createElement("div");
       row.className = "order-row";
       row.style.cursor = "default";
-      row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div></div><div style="display:flex; gap:6px; flex:none"><button class="btn ghost small" data-reimp="' + o.id + '" title="Reimprimir etiqueta + nota" aria-label="Reimprimir etiqueta e nota">🖨️</button>' + (meu && meu.papel === "admin" ? '<button class="btn small" data-exp="' + o.id + '" data-num="' + escapeHtml(o.id_externo) + '">expedir</button>' : '') + '</div>';
+      row.innerHTML = '<div><div class="oid">' + (o.volta_em ? '<span class="selo-volta">VOLTOU</span>' : '') + escapeHtml(o.id_externo) + '</div><div class="meta">' + canalLabel(o.canal) + ' · ' + qtdTotal + ' un.</div>' + (o.volta_aviso ? '<div class="volta-linha">' + escapeHtml(o.volta_aviso) + '</div>' : '') + '</div><div style="display:flex; gap:6px; flex:none"><button class="btn ghost small" data-prob="' + o.id + '" title="Reportar problema com o pacote" aria-label="Reportar problema">⚠</button><button class="btn ghost small" data-reimp="' + o.id + '" title="Reimprimir etiqueta + nota" aria-label="Reimprimir etiqueta e nota">🖨️</button>' + (meu && meu.papel === "admin" ? '<button class="btn small" data-exp="' + o.id + '" data-num="' + escapeHtml(o.id_externo) + '">expedir</button>' : '') + '</div>';
       el.appendChild(row);
     });
     el.querySelectorAll("[data-exp]").forEach(function (btn) {
@@ -57,6 +57,12 @@ function carregarFilaExpedicao() {
     });
     el.querySelectorAll("[data-reimp]").forEach(function (btn) {
       btn.addEventListener("click", function () { reimprimirPedido(btn.dataset.reimp); });
+    });
+    el.querySelectorAll("[data-prob]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var o = lista.find(function (x) { return x.id === btn.dataset.prob; });
+        if (o) abrirReporte(o, "expedicao", null, carregarFilaExpedicao);
+      });
     });
   });
 
@@ -129,9 +135,9 @@ function handleScanExpedicao(code) {
   if (!code) return;
   // tenta o código exato primeiro; se não achar e for numérico, busca na fila toda e compara sem zeros à esquerda
   // (evita falha quando a câmera lê um EAN-13/UPC-A com ou sem o zero inicial)
-  sb.from("pedidos").select("id,id_externo").eq("status", "embalado").ilike("id_externo", code).maybeSingle().then(function (res) {
+  sb.from("pedidos").select("id,id_externo").eq("status", "embalado").eq("em_ocorrencia", false).ilike("id_externo", code).maybeSingle().then(function (res) {
     if (!res.error && res.data) return res.data;
-    return sb.from("pedidos").select("id,id_externo").eq("status", "embalado").then(function (res2) {
+    return sb.from("pedidos").select("id,id_externo").eq("status", "embalado").eq("em_ocorrencia", false).then(function (res2) {
       var alvo = normalizarCodigo(code);
       var rastreio = String(code).trim().toUpperCase();
       // aceita também o código de rastreio da etiqueta simulada (SIM...BR)
@@ -154,9 +160,13 @@ function handleScanExpedicao(code) {
 // quando o código não está entre os embalados: descobre se foi cancelado, já expedido ou ainda está em outra etapa
 function explicarScanForaDaFila(code) {
   var NOMES = { a_separar: "na separação", separado: "esperando embalagem" };
-  sb.rpc("situacao_pedido_por_codigo", { p_codigo: code }).then(function (r) {
+  sb.rpc("situacao_pedido_v2", { p_codigo: code }).then(function (r) {
     var p = (r && r.data && r.data[0]) || null;
-    if (p && p.status === "cancelado") {
+    if (p && p.em_ocorrencia && p.status !== "cancelado" && p.status !== "expedido") {
+      fecharCamera();
+      toastScan("Pedido " + p.id_externo + " com problema em aberto: não envie", "err");
+      setExpUltimo("err", "Não envie: pedido " + p.id_externo + " com problema em aberto", "Aguarde o admin resolver na tela Problemas. Deixe o pacote separado.");
+    } else if (p && p.status === "cancelado") {
       fecharCamera();
       toastScan("Pedido " + p.id_externo + " CANCELADO: não envie", "err");
       setExpUltimo("err", "Não envie: pedido " + p.id_externo + " cancelado", "Separe o pacote para devolução ao estoque.");

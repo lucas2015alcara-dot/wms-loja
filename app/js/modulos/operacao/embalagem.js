@@ -7,7 +7,7 @@ var embAtivoId = null;
 function carregarEmbProximos() {
   var el = document.getElementById("embProximos");
   if (!el) return;
-  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,itens_pedido(qtd)").eq("status", "separado").order("criado_em").limit(15).then(function (res) {
+  sb.from("pedidos").select("id,id_externo,canal,criado_em,reservado_por,reservado_em,volta_aviso,volta_em,itens_pedido(qtd)").eq("status", "separado").eq("em_ocorrencia", false).order("volta_em", { ascending: false, nullsFirst: false }).order("criado_em").limit(15).then(function (res) {
     var lista = res.data || [];
     if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum pedido separado esperando embalagem.</div>'; return; }
     el.innerHTML = "";
@@ -16,7 +16,7 @@ function carregarEmbProximos() {
       var ocupado = reservaAtivaDeOutro(o);
       var row = document.createElement("div");
       row.className = "prox-row" + (o.id === embAtivoId ? " atual" : "") + (ocupado ? " ocupado" : "");
-      row.innerHTML = '<div><b>' + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span></div><span>' + (ocupado ? 'em uso' : (o.id === embAtivoId ? 'aberto' : 'abrir')) + '</span>';
+      row.innerHTML = '<div><b>' + (o.volta_em ? '<span class="selo-volta">VOLTOU</span>' : '') + escapeHtml(o.id_externo) + '</b><br><span>' + canalLabel(o.canal) + ', ' + un + (un === 1 ? ' item' : ' itens') + '</span>' + infoVolta(o) + '</div><span>' + (ocupado ? 'em uso' : (o.id === embAtivoId ? 'aberto' : 'abrir')) + '</span>';
       if (!ocupado && o.id !== embAtivoId) row.addEventListener("click", function () {
         if (embAtivoId) liberarReservaPedido(embAtivoId);
         abrirEmbalagem(o.id);
@@ -97,6 +97,7 @@ function buscarPedidosPorItemEmbalagem(codigo) {
       .select("qtd,qtd_embalada,pedido_id,pedidos!inner(id,id_externo,canal,status,reservado_por,reservado_em)")
       .eq("produto_id", resProd.data.id)
       .eq("pedidos.status", "separado")
+      .eq("pedidos.em_ocorrencia", false)
       .then(function (res) {
         var itens = (res.data || []).filter(function (i) { return i.qtd_embalada < i.qtd; });
         if (itens.length === 0) {

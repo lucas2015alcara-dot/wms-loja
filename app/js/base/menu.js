@@ -15,11 +15,12 @@ var TAB_ICONS = {
   catalogo: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
   usuarios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c3 .2 5.5 2.3 5.5 5.8"/></svg>',
   relatorios: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 3 3 5-7"/></svg>',
+  problemas: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
   laboratorio: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
   painel: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.5 8.5 15 12l3.5 3.5"/><path d="M8 7v10l-4-5Z"/></svg>'
 };
 var TABS = {
-  admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"], ["retirada", "Retirada"], ["catalogo", "Catálogo"], ["laboratorio", "Laboratório"], ["usuarios", "Usuários"]],
+  admin: [["pedidos", "Pedidos"], ["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["problemas", "Problemas"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["relatorios", "Relatórios"], ["painel", "Painel"], ["retirada", "Retirada"], ["catalogo", "Catálogo"], ["laboratorio", "Laboratório"], ["usuarios", "Usuários"]],
   operador: [["separacao", "Separar"], ["embalagem", "Embalar"], ["expedicao", "Expedir"], ["enderecos", "Endereços"], ["devolucoes", "Devoluções"], ["inventario", "Inventário"], ["painel", "Painel"], ["retirada", "Retirada"], ["catalogo", "Catálogo"]],
   separador: [["separacao", "Separar"], ["painel", "Painel"]],
   embalador: [["embalagem", "Embalar"], ["painel", "Painel"]],
@@ -28,7 +29,7 @@ var TABS = {
 };
 var NAV_GROUPS = {
   admin: [
-    { label: "Operação", views: ["pedidos", "separacao", "embalagem", "expedicao"] },
+    { label: "Operação", views: ["pedidos", "separacao", "embalagem", "expedicao", "problemas"] },
     { label: "Estoque", views: ["enderecos", "devolucoes", "inventario", "relatorios"] },
     { label: "Loja", views: ["retirada", "catalogo"] },
     { label: "Laboratório", views: ["laboratorio"] },
@@ -145,6 +146,7 @@ function showView(name) {
   if (name === "retirada") carregarRetirada();
   if (name === "painel") carregarPainel();
   if (name === "laboratorio") carregarLaboratorio();
+  if (name === "problemas") carregarProblemas();
   carregarContadores();
 }
 

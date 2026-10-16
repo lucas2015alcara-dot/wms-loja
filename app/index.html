@@ -515,6 +515,32 @@
       </div>
     </div>
 
+    <div class="view" id="view-problemas">
+      <h1 class="pg-titulo">Problemas</h1>
+      <div class="op-layout">
+        <div class="op-main">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <h2 style="margin:0">Em aberto <span id="probAbertasQtd" class="ret-cont"></span></h2>
+              <button class="btn ghost small" id="probAtualizar" type="button">Atualizar</button>
+            </div>
+            <p class="pn-obs" style="margin:6px 0 4px">Pedidos fora da fila até você resolver. Os itens já separados ficam na caixa de pendências.</p>
+            <div id="probAbertas"></div>
+          </div>
+          <div class="card">
+            <h2>Aguardando reposição <span id="probAguardQtd" class="ret-cont"></span></h2>
+            <div id="probAguard"></div>
+          </div>
+        </div>
+        <aside class="op-lado">
+          <div class="card">
+            <h2>Resolvidos (7 dias)</h2>
+            <div id="probResolvidas"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
     <div class="view" id="view-catalogo">
       <h1 class="pg-titulo">Catálogo da loja</h1>
       <div class="card">
@@ -571,7 +597,10 @@
         </article>
       </div>
       <div class="card" id="alertasCard" style="display:none">
-        <h2>Precisa de atenção</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+          <h2 style="margin:0">Problemas em aberto</h2>
+          <button class="btn ghost small" type="button" onclick="showView('problemas')">Abrir Problemas →</button>
+        </div>
         <div id="listaAlertas"></div>
       </div>
       <div class="card">
@@ -615,6 +644,66 @@
     <div class="row" style="margin-top:14px">
       <button class="btn ghost" id="expManualCancelar">Cancelar</button>
       <button class="btn primary" id="expManualConfirmar">Confirmar expedição</button>
+    </div>
+  </div>
+</div>
+
+<!-- reportar problema (operador) -->
+<div class="wms-modal" id="ocModal" role="dialog" aria-modal="true" aria-labelledby="ocTitulo">
+  <div class="box">
+    <h3 id="ocTitulo">Reportar problema</h3>
+    <div class="sub" id="ocSub"></div>
+    <span class="rot">O que aconteceu?</span>
+    <div class="oc-motivos" id="ocMotivos" role="radiogroup" aria-label="Motivo"></div>
+    <div id="ocQtdWrap">
+      <label for="ocQtd">Quantas unidades têm o problema? (opcional)</label>
+      <input type="number" id="ocQtd" min="1" step="1" inputmode="numeric">
+    </div>
+    <label for="ocDetalhe" id="ocDetalheRot">Observação (opcional)</label>
+    <input type="text" id="ocDetalhe" maxlength="300" autocomplete="off" placeholder="Ex.: endereço vazio, caixa amassada…">
+    <div class="aviso" id="ocAviso"></div>
+    <div class="err" id="ocErr"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="ocVoltar" type="button">Voltar</button>
+      <button class="btn primary" id="ocConfirmar" type="button">Reportar e tirar da fila</button>
+    </div>
+  </div>
+</div>
+
+<!-- resolver problema (admin) -->
+<div class="wms-modal" id="resModal" role="dialog" aria-modal="true" aria-labelledby="resTitulo">
+  <div class="box">
+    <h3 id="resTitulo">Resolver problema</h3>
+    <div class="sub" id="resSub"></div>
+    <label for="resSolucao">Qual foi a solução?</label>
+    <select id="resSolucao" class="usr-select"></select>
+    <div id="resCampos"></div>
+    <label for="resDetalhe" id="resDetalheRot">Observação (opcional)</label>
+    <input type="text" id="resDetalhe" maxlength="300" autocomplete="off">
+    <div id="resDevolverWrap">
+      <label for="resDevolver">Devolver o pedido para</label>
+      <select id="resDevolver" class="usr-select"></select>
+      <div class="sub" style="margin-top:4px">Fica reservado 15 min para essa pessoa; depois, qualquer um pode pegar.</div>
+    </div>
+    <div class="err" id="resErr"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="resVoltar" type="button">Voltar</button>
+      <button class="btn primary" id="resConfirmar" type="button">Resolver</button>
+    </div>
+  </div>
+</div>
+
+<!-- transferir reserva (admin) -->
+<div class="wms-modal" id="trModal" role="dialog" aria-modal="true" aria-labelledby="trTitulo">
+  <div class="box">
+    <h3 id="trTitulo">Passar o pedido</h3>
+    <div class="sub" id="trSub"></div>
+    <label for="trPara">Para quem?</label>
+    <select id="trPara" class="usr-select"></select>
+    <div class="err" id="trErr"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="trVoltar" type="button">Voltar</button>
+      <button class="btn primary" id="trConfirmar" type="button">Passar</button>
     </div>
   </div>
 </div>
@@ -669,6 +758,7 @@
 <script src="js/modulos/operacao/reserva.js"></script>
 <script src="js/modulos/operacao/embalagem.js"></script>
 <script src="js/modulos/operacao/fase.js"></script>
+<script src="js/modulos/operacao/ocorrencias.js"></script>
 <script src="js/modulos/operacao/expedicao.js"></script>
 <script src="js/modulos/estoque/enderecos.js"></script>
 <script src="js/modulos/estoque/devolucoes.js"></script>

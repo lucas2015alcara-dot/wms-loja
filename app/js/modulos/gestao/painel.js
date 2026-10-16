@@ -82,35 +82,10 @@ function painelExtras() {
 function carregarPainel() {
   carregarContadores();
   painelExtras();
-  if (meu.papel === "admin") {
-    document.getElementById("alertasCard").style.display = "";
-    sb.from("alertas_estoque").select("id,resolvido,criado_em,item_id,origem,itens_pedido(produtos(sku,nome),pedido_id,pedidos(id_externo))").eq("resolvido", false).then(function (res) {
-      var el = document.getElementById("listaAlertas");
-      el.innerHTML = "";
-      var lista = res.data || [];
-      if (lista.length === 0) { el.innerHTML = '<div class="empty">Nenhuma pendência em aberto.</div>'; return; }
-      lista.forEach(function (a) {
-        var prod = a.itens_pedido && a.itens_pedido.produtos ? a.itens_pedido.produtos : { sku: "?", nome: "?" };
-        var ped = a.itens_pedido && a.itens_pedido.pedidos ? a.itens_pedido.pedidos.id_externo : "?";
-        var origemLabel = a.origem === "embalagem" ? "embalagem" : "separação";
-        var row = document.createElement("div");
-        row.className = "order-row";
-        row.style.cursor = "default";
-        row.innerHTML = '<div><div class="oid">' + escapeHtml(prod.nome) + ' <span class="badge wait" style="margin-left:6px">' + origemLabel + '</span></div><div class="meta mono">' + skuTxt(prod.sku) + ' · pedido ' + escapeHtml(ped) + '</div></div><button class="btn small" data-res="' + a.id + '">resolver</button>';
-        el.appendChild(row);
-      });
-      el.querySelectorAll("[data-res]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          sb.from("alertas_estoque").update({ resolvido: true }).eq("id", btn.dataset.res).then(function () { carregarPainel(); });
-        });
-      });
-    });
-  } else {
-    document.getElementById("alertasCard").style.display = "none";
-  }
+  resumoProblemasPainel();
 
   if (meu.papel === "admin") {
-    sb.from("pedidos").select("id,id_externo,canal,status,criado_em,motivo_cancelamento,cancelado_em,itens_pedido(qtd)").order("criado_em", { ascending: false }).limit(50).then(function (res) {
+    sb.from("pedidos").select("id,id_externo,canal,status,em_ocorrencia,criado_em,motivo_cancelamento,cancelado_em,itens_pedido(qtd)").order("criado_em", { ascending: false }).limit(50).then(function (res) {
       var el = document.getElementById("painelLista");
       el.innerHTML = "";
       var lista = res.data || [];
@@ -127,6 +102,7 @@ function carregarPainel() {
         var podeCancelar = o.status !== "cancelado" && o.status !== "expedido";
         row.innerHTML = '<div><div class="oid">' + escapeHtml(o.id_externo) + '</div><div class="meta">' + meta + '</div></div>' +
           '<div class="acoes">' + (podeCancelar ? '<button class="btn danger small" data-cancelar="' + o.id + '">Cancelar</button>' : '') +
+          (o.em_ocorrencia ? '<span class="badge cancel">problema</span>' : '') +
           '<span class="badge ' + statusBadge(o.status) + '">' + statusLabel(o.status) + '</span></div>';
         el.appendChild(row);
       });

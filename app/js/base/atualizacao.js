@@ -50,7 +50,21 @@ function verificarPedidosNovos() {
   });
 }
 
+// pedido que voltou de um problema reservado para mim
+var ultimaVoltaVista = new Date().toISOString();
+function verificarVoltas() {
+  if (!meu || document.hidden || meu.papel === "laboratorio") return;
+  sb.from("pedidos").select("id_externo,volta_em,volta_aviso").eq("reservado_por", meu.id).gt("volta_em", ultimaVoltaVista).order("volta_em").then(function (r) {
+    (r.data || []).forEach(function (p) {
+      toast("O pedido " + p.id_externo + " voltou para você: continue de onde parou", "ok");
+      try { somOk(); } catch (e) {}
+      if (p.volta_em > ultimaVoltaVista) ultimaVoltaVista = p.volta_em;
+    });
+  });
+}
+
 setInterval(function () {
+  verificarVoltas();
   verificarPedidosNovos();
   atualizarTelaAtual();
 }, ATUALIZA_MS);
