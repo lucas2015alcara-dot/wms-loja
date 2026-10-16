@@ -587,3 +587,13 @@
 .lab-tr .ret-nome { font-size: 14px; font-weight: 600; }
 .lab-tr .ret-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .lab-tr.volta .ret-nome { color: var(--accent-ink); }
+
+/* ---------- SINCRONIZAÇÃO COM O OLIST ---------- */
+.sync-auto { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); margin-bottom: 10px; }
+.sync-auto.ligada { border-color: var(--green); background: var(--done-bg); }
+.sync-auto-tx { min-width: 0; flex: 1; font-size: 14px; }
+.sync-auto-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.sync-auto .btn { flex: none; }
+.sync-ultima { font-size: 13px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.4; }
+.sync-ultima.erro { color: var(--red); }
+.sync-ultima.rodando { color: var(--accent-ink); }

@@ -73,8 +73,16 @@
         <div class="op-main">
           <div class="card" id="cardSyncOlist" style="display:none">
         <h2>Integração Olist</h2>
-        <p class="meta" style="margin-bottom:10px">Busca pedidos aprovados dos últimos 7 dias direto no Olist e cria aqui os que ainda não existem.</p>
-        <button class="btn primary" id="btnSyncOlist" style="width:100%">Sincronizar pedidos do Olist</button>
+        <p class="meta" style="margin-bottom:10px">Busca os pedidos dos últimos 7 dias direto no Olist, cria aqui os que ainda não existem e cancela os que foram cancelados lá.</p>
+        <div class="sync-auto" id="syncAuto">
+          <div class="sync-auto-tx">
+            <div id="syncAutoEstado"><b>Sincronização automática</b></div>
+            <div class="sync-auto-sub" id="syncAutoSub">Carregando…</div>
+          </div>
+          <button class="btn small" id="syncAutoBtn" type="button"></button>
+        </div>
+        <div class="sync-ultima" id="syncUltima"></div>
+        <button class="btn primary" id="btnSyncOlist" style="width:100%">Sincronizar agora</button>
         <div id="syncOlistResultado" style="margin-top:10px; font-size:13px; color:var(--text-dim)"></div>
       </div>
           <div class="card">
@@ -659,6 +667,7 @@
 <script src="js/modulos/loja/catalogo.js"></script>
 <script src="js/modulos/laboratorio/laboratorio.js"></script>
 <script src="js/modulos/estoque/enderecamento.js"></script>
+<script src="js/base/atualizacao.js"></script>
 <script src="js/iniciar.js"></script>
 </body>
 </html>

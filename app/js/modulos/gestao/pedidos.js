@@ -78,6 +78,73 @@ function resolverProdutos(itens) {
   return Promise.all(promessas);
 }
 
+// ---------------- SINCRONIZAÇÃO COM O OLIST ----------------
+// Botão "Sincronizar agora" (admin) + sincronização automática a cada 5 min (agendamento no banco,
+// liga/desliga em config_wms.sync_auto_olist). Cada rodada fica registrada em "sincronizacoes".
+var SYNC_HORARIO = "a cada 5 min, de segunda a sábado, das 7h às 21h";
+var syncAutoLigada = false;
+
+function chamarSincronizacao() {
+  return sb.functions.invoke("sincronizar-olist", { method: "POST" }).then(function (res) {
+    if (!res.error) return res.data || {};
+    var ctx = res.error.context;
+    if (ctx && typeof ctx.json === "function") return ctx.json().then(function (j) { return j || { error: res.error.message }; }, function () { return { error: res.error.message }; });
+    return { error: res.error.message || "Falha na comunicação." };
+  }, function (e) { return { error: String(e) }; });
+}
+
+function horaSync(iso) {
+  var d = new Date(iso), hoje = new Date();
+  var h = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === hoje.toDateString() ? "hoje às " + h : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + h;
+}
+
+function carregarStatusSync() {
+  var card = document.getElementById("cardSyncOlist");
+  if (!card || card.style.display === "none") return;
+  sb.from("config_wms").select("valor").eq("chave", "sync_auto_olist").maybeSingle().then(function (r) {
+    syncAutoLigada = !!(r.data && r.data.valor === "ligada");
+    var est = document.getElementById("syncAutoEstado"), sub = document.getElementById("syncAutoSub"), bt = document.getElementById("syncAutoBtn");
+    document.getElementById("syncAuto").classList.toggle("ligada", syncAutoLigada);
+    est.innerHTML = "<b>Sincronização automática: " + (syncAutoLigada ? "ligada" : "desligada") + "</b>";
+    sub.textContent = syncAutoLigada ? SYNC_HORARIO + "." : "Os pedidos só entram quando alguém clica em Sincronizar agora.";
+    bt.textContent = syncAutoLigada ? "Desligar" : "Ligar";
+    bt.className = "btn small " + (syncAutoLigada ? "ghost" : "primary");
+  });
+  sb.from("sincronizacoes").select("origem,iniciado_em,terminado_em,importados,cancelados_no_wms,erros,erro,resumo").order("iniciado_em", { ascending: false }).limit(1).then(function (r) {
+    var el = document.getElementById("syncUltima");
+    var s = r.data && r.data[0];
+    if (!s) { el.innerHTML = '<span class="pn-obs">Nenhuma sincronização registrada ainda.</span>'; el.className = "sync-ultima"; return; }
+    var quem = s.origem === "auto" ? "automática" : "pelo botão";
+    var txt;
+    if (!s.terminado_em) txt = "Sincronizando agora (" + quem + ", começou " + horaSync(s.iniciado_em) + ")…";
+    else if (s.erro) txt = "Última sincronização " + horaSync(s.iniciado_em) + " (" + quem + ") <b>falhou</b>: " + escapeHtml(s.erro);
+    else {
+      var partes = [(s.importados || 0) + " novo" + (s.importados === 1 ? "" : "s")];
+      if (s.cancelados_no_wms) partes.push(s.cancelados_no_wms + " cancelado" + (s.cancelados_no_wms === 1 ? "" : "s"));
+      if (s.erros) partes.push(s.erros + " com erro");
+      var pend = s.resumo && s.resumo.pendentes;
+      if (pend) partes.push(pend + " na próxima rodada");
+      txt = "Última sincronização " + horaSync(s.iniciado_em) + " (" + quem + "): " + partes.join(", ") + ".";
+    }
+    el.innerHTML = txt;
+    el.className = "sync-ultima" + (s.erro ? " erro" : (!s.terminado_em ? " rodando" : ""));
+  });
+}
+
+var syncAutoBtn = document.getElementById("syncAutoBtn");
+if (syncAutoBtn) syncAutoBtn.addEventListener("click", function () {
+  if (!meu || meu.papel !== "admin") return;
+  var novo = !syncAutoLigada;
+  syncAutoBtn.disabled = true;
+  sb.from("config_wms").upsert({ chave: "sync_auto_olist", valor: novo ? "ligada" : "desligada", atualizado_em: new Date().toISOString(), atualizado_por: meu.id }).then(function (res) {
+    syncAutoBtn.disabled = false;
+    if (res.error) { toast("Não foi possível alterar: " + res.error.message, "err"); return; }
+    toast(novo ? "Sincronização automática ligada." : "Sincronização automática desligada.", "ok");
+    carregarStatusSync();
+  });
+});
+
 var btnSyncOlist = document.getElementById("btnSyncOlist");
 if (btnSyncOlist) {
   btnSyncOlist.addEventListener("click", function () {
@@ -85,26 +152,28 @@ if (btnSyncOlist) {
     btnSyncOlist.disabled = true;
     btnSyncOlist.textContent = "Sincronizando…";
     out.textContent = "";
-    sb.functions.invoke("sincronizar-olist", { method: "POST" }).then(function (res) {
+    chamarSincronizacao().then(function (d) {
       btnSyncOlist.disabled = false;
-      btnSyncOlist.textContent = "Sincronizar pedidos do Olist";
-      if (res.error) {
-        out.textContent = "Erro: " + res.error.message;
-        toast("Falha ao sincronizar com o Olist.", "err");
+      btnSyncOlist.textContent = "Sincronizar agora";
+      carregarStatusSync();
+      if (d.ocupado) {
+        out.textContent = "Já tem uma sincronização rodando (provavelmente a automática). Os pedidos novos aparecem sozinhos em instantes.";
+        toast("Sincronização já em andamento.", "ok");
         return;
       }
-      var d = res.data || {};
       if (d.error) {
-        out.textContent = "Erro do Olist: " + d.error + (d.detalhe ? " — " + JSON.stringify(d.detalhe) : "");
-        toast("Olist retornou um erro.", "err");
+        out.textContent = "Erro: " + d.error + (d.detalhe ? " — " + JSON.stringify(d.detalhe) : "");
+        toast("Falha ao sincronizar com o Olist.", "err");
         return;
       }
       var linhas = [];
       linhas.push(d.importados + " pedido(s) importado(s)");
       linhas.push(d.ja_existentes + " já existiam");
+      if (d.paginas > 1) linhas.push(d.paginas + " páginas lidas no Olist");
       if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem item válido");
       if (d.cancelados_no_wms && d.cancelados_no_wms.length) linhas.push("cancelados no WMS (cancelados no Olist): " + d.cancelados_no_wms.join(", "));
       if (d.avisos && d.avisos.length) linhas.push(d.avisos.join(" · "));
+      if (d.erros && d.erros.length) linhas.push("erros: " + d.erros.join(" · "));
       if (d.produtos_cadastrados_automaticamente && d.produtos_cadastrados_automaticamente.length) linhas.push("produtos novos cadastrados: " + d.produtos_cadastrados_automaticamente.join("; "));
       out.textContent = linhas.join(" · ");
       toast(d.importados + " pedido(s) importado(s) do Olist.", "ok");
@@ -115,6 +184,7 @@ if (btnSyncOlist) {
 }
 
 function carregarFilaPedidos() {
+  carregarStatusSync();
   sb.from("pedidos").select("id,id_externo,canal,status,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em", { ascending: false }).then(function (res) {
     var el = document.getElementById("listaPedidos");
     el.innerHTML = "";
