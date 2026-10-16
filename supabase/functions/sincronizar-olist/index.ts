@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { lerRegras, triagemPesquisa, triagemDetalhe } from "./regras.ts";
 
-// Sincronização de pedidos Olist → WMS (v7, 16/10/2026).
+// Sincronização de pedidos Olist → WMS (v8, 16/10/2026).
+// v8: filtro de canais (regras em config_wms.sync_regras, lógica em regras.ts). Vendas de balcão,
+// Retiradas (RESERVA LOJA) e Full ficam fora; o que ficar na dúvida vai para "A revisar" (sync_triagem).
+// Ação extra do admin: { acao: "importar", olist_id, canal } manda um pedido de "A revisar" para a fila.
 // Quem pode chamar:
 //   • admin logado (botão "Sincronizar") → origem "manual"
 //   • agendamento do banco (pg_cron), com o cabeçalho x-chave-cron → origem "auto",
@@ -20,6 +24,7 @@ const API = "https://api.tiny.com.br/api2";
 const MAX_PAGINAS = 20;          // 20 × 100 = até 2.000 pedidos em 7 dias
 const MAX_NOVOS_POR_RODADA = 60; // o resto entra na próxima rodada (5 min depois)
 const PAUSA_MS = 350;            // entre chamadas ao Olist, para não estourar o limite por minuto
+const CANAIS = ["mercado_livre", "shopee", "site_proprio", "olist", "outro"];
 
 function fmtData(d: Date) {
   const dd = String(d.getDate()).padStart(2, "0");
@@ -76,6 +81,28 @@ Deno.serve(async (req: Request) => {
     usuarioId = userData.user.id;
   }
 
+  const body = origem === "manual" ? await req.json().catch(() => ({})) : {};
+
+  // ---------- importar 1 pedido da lista "A revisar" (admin) ----------
+  if (body?.acao === "importar") {
+    const olistId = String(body.olist_id || "");
+    const canal = CANAIS.includes(String(body.canal)) ? String(body.canal) : "outro";
+    if (!olistId) return json({ error: "pedido não informado" }, 400);
+    const token = await lerSecreto("olist_token");
+    if (!token) return json({ error: "token do Olist não configurado" }, 400);
+    const r = await chamarOlist("pedido.obter.php", { token, id: olistId });
+    const det = r?.retorno?.pedido;
+    if (!det) return json({ error: "não foi possível ler o pedido no Olist", detalhe: r?.retorno ?? r }, 502);
+    const idExterno = String(det.numero_ecommerce || det.numero || olistId);
+    const { data: ja } = await admin.from("pedidos").select("id").eq("id_externo", idExterno).maybeSingle();
+    if (!ja) {
+      const res = await gravarPedido(admin, det, idExterno, canal, olistId);
+      if (!res.ok) return json({ error: res.erro }, 500);
+    }
+    await admin.from("sync_triagem").update({ status: "importado_admin", decidido_por: usuarioId, decidido_em: new Date().toISOString(), canal_sugerido: canal }).eq("olist_id", olistId);
+    return json({ ok: true, id_externo: idExterno, ja_existia: !!ja });
+  }
+
   // ---------- uma por vez ----------
   const { data: syncId, error: erroTrava } = await admin.rpc("sync_iniciar", { p_origem: origem, p_usuario: usuarioId });
   if (erroTrava) return json({ error: "falha ao registrar a sincronização: " + erroTrava.message }, 500);
@@ -92,8 +119,10 @@ Deno.serve(async (req: Request) => {
       return json({ error: "token do Olist não configurado" }, 400);
     }
 
+    const { data: cfgRegras } = await admin.from("config_wms").select("valor").eq("chave", "sync_regras").maybeSingle();
+    const regras = lerRegras(cfgRegras?.valor);
     const hoje = new Date();
-    const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const seteDiasAtras = new Date(hoje.getTime() - (regras.dias || 7) * 24 * 60 * 60 * 1000);
 
     // ---------- 1) todas as páginas da pesquisa ----------
     const pedidosOlist: any[] = [];
@@ -130,7 +159,16 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // pedidos já triados (ignorados ou esperando revisão) não são reavaliados
+    const triados = new Map<string, string>();
+    const olistIds = pedidosOlist.map((p) => String(p.id));
+    for (let i = 0; i < olistIds.length; i += 200) {
+      const { data } = await admin.from("sync_triagem").select("olist_id,status").in("olist_id", olistIds.slice(i, i + 200));
+      for (const t of data || []) triados.set(t.olist_id, t.status);
+    }
+
     let importados = 0, jaExistentes = 0, semItensValidos = 0, cancelados = 0, deixadosParaDepois = 0;
+    let foraSituacao = 0, balcao = 0, ignoradosRegra = 0, aRevisarNovos = 0, jaTriados = 0, consultas = 0;
     let parouPorLimite = false;
     const canceladosNoWms: string[] = [];
     const avisos: string[] = [];
@@ -162,57 +200,41 @@ Deno.serve(async (req: Request) => {
       }
 
       if (noWms) { jaExistentes++; continue; }
-      if (parouPorLimite || importados + semItensValidos >= MAX_NOVOS_POR_RODADA) { deixadosParaDepois++; continue; }
+      if (triados.has(String(p.id))) { jaTriados++; continue; }
 
-      // ---------- pedido novo: busca os itens ----------
+      // 1ª peneira (só com a pesquisa): situação e número de e-commerce
+      const peneira = triagemPesquisa(p, regras);
+      if (peneira === "situacao") { foraSituacao++; continue; }
+      if (peneira === "balcao") { balcao++; continue; }
+
+      if (parouPorLimite || consultas >= MAX_NOVOS_POR_RODADA) { deixadosParaDepois++; continue; }
+
+      // ---------- pedido novo: busca o pedido completo ----------
       await esperar(PAUSA_MS);
+      consultas++;
       const obterJson = await chamarOlist("pedido.obter.php", { token, id: String(p.id) });
       if (limiteEstourado(obterJson)) { parouPorLimite = true; deixadosParaDepois++; continue; }
       const detalhe = obterJson?.retorno?.pedido;
       if (!detalhe) { erros.push(`pedido ${idExterno}: não foi possível obter detalhes`); continue; }
 
-      const itensValidos: { produto_id: string; qtd: number }[] = [];
-      for (const it of (detalhe.itens || []).map((x: any) => x.item)) {
-        const codigo = it?.codigo;
-        if (!codigo) continue;
-        let produtoId: string | null = null;
-        const { data: produto } = await admin.from("produtos").select("id").eq("sku", codigo).maybeSingle();
-        if (produto) {
-          produtoId = produto.id;
-        } else {
-          const nome = (it?.descricao || codigo).toString().slice(0, 200);
-          const { data: criado, error: erroCriar } = await admin.from("produtos").insert({ sku: codigo, nome }).select("id").single();
-          if (criado) {
-            produtoId = criado.id;
-            produtosNovos.add(`${codigo} — ${nome}`);
-          } else if (erroCriar?.code === "23505") {
-            const { data: jaCriado } = await admin.from("produtos").select("id").eq("sku", codigo).maybeSingle();
-            if (!jaCriado) { erros.push(`SKU ${codigo}: falha ao cadastrar produto (${erroCriar?.message})`); continue; }
-            produtoId = jaCriado.id;
-          } else {
-            erros.push(`SKU ${codigo}: falha ao cadastrar produto (${erroCriar?.message})`);
-            continue;
-          }
-        }
-        itensValidos.push({ produto_id: produtoId!, qtd: Math.max(1, Math.round(Number(it.quantidade) || 1)) });
+      // 2ª peneira: marcadores, cliente, envio e canal
+      const dec = triagemDetalhe(detalhe, regras);
+      if (dec.acao !== "importar") {
+        await admin.from("sync_triagem").upsert({
+          olist_id: String(p.id), numero: String(p.numero ?? ""), numero_ecommerce: String(p.numero_ecommerce ?? ""),
+          cliente: String(detalhe?.cliente?.nome ?? p.nome ?? "").slice(0, 120), situacao: String(p.situacao ?? ""),
+          canal_sugerido: dec.canal, motivo: dec.motivo, status: dec.acao === "ignorar" ? "ignorado_regra" : "revisar",
+        }, { onConflict: "olist_id", ignoreDuplicates: true });
+        if (dec.acao === "ignorar") ignoradosRegra++; else aRevisarNovos++;
+        continue;
       }
-      if (itensValidos.length === 0) { semItensValidos++; continue; }
 
-      const { data: novoPedido, error: erroPedido } = await admin.from("pedidos")
-        .insert({ id_externo: idExterno, canal: "olist", status: "a_separar" }).select().single();
-      if (erroPedido || !novoPedido) {
-        if (erroPedido?.code === "23505") jaExistentes++;
-        else erros.push(`pedido ${idExterno}: erro ao gravar (${erroPedido?.message})`);
-        continue;
-      }
-      const { error: erroItens } = await admin.from("itens_pedido")
-        .insert(itensValidos.map((it) => ({ ...it, pedido_id: novoPedido.id })));
-      if (erroItens) {
-        await admin.from("pedidos").delete().eq("id", novoPedido.id);
-        erros.push(`pedido ${idExterno}: erro ao gravar itens (${erroItens.message}) — será importado na próxima sincronização`);
-        continue;
-      }
-      importados++;
+      const res = await gravarPedido(admin, detalhe, idExterno, dec.canal, String(p.id));
+      for (const pn of res.produtosNovos) produtosNovos.add(pn);
+      if (res.ok) importados++;
+      else if (res.duplicado) jaExistentes++;
+      else if (res.semItens) semItensValidos++;
+      else erros.push(`pedido ${idExterno}: ${res.erro}`);
     }
 
     if (deixadosParaDepois > 0) {
@@ -230,6 +252,11 @@ Deno.serve(async (req: Request) => {
       cancelados_ignorados: cancelados,
       cancelados_no_wms: canceladosNoWms,
       pendentes_proxima_rodada: deixadosParaDepois,
+      fora_da_situacao: foraSituacao,
+      vendas_balcao: balcao,
+      ignorados_por_regra: ignoradosRegra,
+      a_revisar_novos: aRevisarNovos,
+      ja_triados: jaTriados,
       avisos,
       produtos_cadastrados_automaticamente: Array.from(produtosNovos),
       erros,
@@ -237,7 +264,8 @@ Deno.serve(async (req: Request) => {
     await finalizar({
       encontrados: pedidosOlist.length, paginas, importados, ja_existentes: jaExistentes,
       cancelados_no_wms: canceladosNoWms.length, erros: erros.length,
-      resumo: { avisos, erros, cancelados_no_wms: canceladosNoWms, produtos_novos: Array.from(produtosNovos), pendentes: deixadosParaDepois },
+      resumo: { avisos, erros, cancelados_no_wms: canceladosNoWms, produtos_novos: Array.from(produtosNovos), pendentes: deixadosParaDepois,
+        balcao, fora_situacao: foraSituacao, ignorados_regra: ignoradosRegra, a_revisar_novos: aRevisarNovos },
     });
     return json(resultado);
   } catch (e) {
@@ -245,3 +273,48 @@ Deno.serve(async (req: Request) => {
     return json({ error: String(e) }, 500);
   }
 });
+
+// grava um pedido do Olist no WMS (produtos novos são cadastrados na hora)
+async function gravarPedido(admin: any, detalhe: any, idExterno: string, canal: string, olistId: string):
+  Promise<{ ok: boolean; duplicado?: boolean; semItens?: boolean; erro?: string; produtosNovos: string[] }> {
+  const produtosNovos: string[] = [];
+  const itensValidos: { produto_id: string; qtd: number }[] = [];
+  for (const it of (detalhe.itens || []).map((x: any) => x.item)) {
+    const codigo = it?.codigo;
+    if (!codigo) continue;
+    let produtoId: string | null = null;
+    const { data: produto } = await admin.from("produtos").select("id").eq("sku", codigo).maybeSingle();
+    if (produto) {
+      produtoId = produto.id;
+    } else {
+      const nome = (it?.descricao || codigo).toString().slice(0, 200);
+      const { data: criado, error: erroCriar } = await admin.from("produtos").insert({ sku: codigo, nome }).select("id").single();
+      if (criado) {
+        produtoId = criado.id;
+        produtosNovos.push(`${codigo} — ${nome}`);
+      } else if (erroCriar?.code === "23505") {
+        const { data: jaCriado } = await admin.from("produtos").select("id").eq("sku", codigo).maybeSingle();
+        if (!jaCriado) return { ok: false, erro: `SKU ${codigo}: falha ao cadastrar produto (${erroCriar?.message})`, produtosNovos };
+        produtoId = jaCriado.id;
+      } else {
+        return { ok: false, erro: `SKU ${codigo}: falha ao cadastrar produto (${erroCriar?.message})`, produtosNovos };
+      }
+    }
+    itensValidos.push({ produto_id: produtoId!, qtd: Math.max(1, Math.round(Number(it.quantidade) || 1)) });
+  }
+  if (itensValidos.length === 0) return { ok: false, semItens: true, produtosNovos };
+
+  const { data: novoPedido, error: erroPedido } = await admin.from("pedidos")
+    .insert({ id_externo: idExterno, canal, status: "a_separar", olist_id: olistId }).select().single();
+  if (erroPedido || !novoPedido) {
+    if (erroPedido?.code === "23505") return { ok: false, duplicado: true, produtosNovos };
+    return { ok: false, erro: `erro ao gravar (${erroPedido?.message})`, produtosNovos };
+  }
+  const { error: erroItens } = await admin.from("itens_pedido")
+    .insert(itensValidos.map((it) => ({ ...it, pedido_id: novoPedido.id })));
+  if (erroItens) {
+    await admin.from("pedidos").delete().eq("id", novoPedido.id);
+    return { ok: false, erro: `erro ao gravar itens (${erroItens.message}) — será importado na próxima sincronização`, produtosNovos };
+  }
+  return { ok: true, produtosNovos };
+}

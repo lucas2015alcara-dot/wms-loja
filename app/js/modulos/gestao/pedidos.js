@@ -125,11 +125,82 @@ function carregarStatusSync() {
       if (s.erros) partes.push(s.erros + " com erro");
       var pend = s.resumo && s.resumo.pendentes;
       if (pend) partes.push(pend + " na próxima rodada");
+      var rv = s.resumo && s.resumo.a_revisar_novos;
+      if (rv) partes.push(rv + " a revisar");
+      var fora = s.resumo ? (s.resumo.balcao || 0) + (s.resumo.ignorados_regra || 0) : 0;
+      if (fora) partes.push(fora + " fora do e-commerce");
       txt = "Última sincronização " + horaSync(s.iniciado_em) + " (" + quem + "): " + partes.join(", ") + ".";
     }
     el.innerHTML = txt;
     el.className = "sync-ultima" + (s.erro ? " erro" : (!s.terminado_em ? " rodando" : ""));
   });
+}
+
+// ---------- filtro de canais: regras e lista "A revisar" ----------
+var CANAIS_REVISAR = [["mercado_livre", "Mercado Livre"], ["shopee", "Shopee"], ["site_proprio", "Site próprio"], ["outro", "Outro"]];
+function textoRegras(r) {
+  var sit = (r.situacoes || []).join(", ");
+  return "<b>Entram na fila:</b> pedidos de marketplace (com número de e-commerce e canal identificado) nas situações " + escapeHtml(sit) + ".<br>" +
+    "<b>Ficam fora:</b> vendas de balcão (sem número de e-commerce), marcadores " + escapeHtml((r.excluir_marcadores || []).join(", ")) +
+    ", clientes " + escapeHtml((r.excluir_clientes || []).join(", ")) + " e envio " + escapeHtml((r.excluir_envio || []).join(", ")) + ".<br>" +
+    "<b>Na dúvida:</b> " + (r.sem_canal === "fila" ? "entram como canal \"Outro\"." : "vão para \"A revisar\".");
+}
+function carregarRevisar() {
+  var card = document.getElementById("cardRevisar");
+  if (!card) return;
+  if (!meu || meu.papel !== "admin") { card.style.display = "none"; return; }
+  sb.from("config_wms").select("valor").eq("chave", "sync_regras").maybeSingle().then(function (r) {
+    var el = document.getElementById("syncRegrasTexto");
+    try { el.innerHTML = textoRegras(JSON.parse((r.data && r.data.valor) || "{}")); } catch (e) { el.textContent = "Regras padrão."; }
+  });
+  sb.from("sync_triagem").select("olist_id,numero,numero_ecommerce,cliente,situacao,motivo,status,canal_sugerido,detectado_em")
+    .in("status", ["revisar", "ignorado_regra"]).order("detectado_em", { ascending: false }).limit(100).then(function (r) {
+      var lista = r.data || [];
+      var rev = lista.filter(function (t) { return t.status === "revisar"; });
+      var ign = lista.filter(function (t) { return t.status === "ignorado_regra"; });
+      card.style.display = (rev.length || ign.length) ? "" : "none";
+      document.getElementById("revisarQtd").textContent = rev.length || "";
+      document.getElementById("ignoradosQtd").textContent = ign.length ? "(" + ign.length + ")" : "";
+      document.getElementById("ignoradosBox").style.display = ign.length ? "" : "none";
+      var el = document.getElementById("revisarLista");
+      el.innerHTML = rev.length ? "" : '<div class="empty" style="padding:10px">Nada para revisar.</div>';
+      rev.forEach(function (t) {
+        var row = document.createElement("div");
+        row.className = "rev-item";
+        row.innerHTML = '<div class="rev-tx"><div class="oid">' + escapeHtml(t.numero_ecommerce || t.numero) + ' <span class="pn-obs">· Olist nº ' + escapeHtml(t.numero) + '</span></div>' +
+          '<div class="meta">' + escapeHtml(t.cliente || "") + ' · ' + escapeHtml(t.situacao || "") + '</div>' +
+          '<div class="rev-motivo">' + escapeHtml(t.motivo) + '</div></div>' +
+          '<div class="rev-acoes"><select class="usr-select" aria-label="Canal">' + CANAIS_REVISAR.map(function (c) {
+            return '<option value="' + c[0] + '"' + (t.canal_sugerido === c[0] ? " selected" : "") + '>' + c[1] + '</option>';
+          }).join("") + '</select><button class="btn primary small" data-a="fila">Mandar para a fila</button><button class="btn ghost small" data-a="ignorar">Ignorar</button></div>';
+        var sel = row.querySelector("select");
+        row.querySelector('[data-a="fila"]').addEventListener("click", function (ev) {
+          var b = ev.currentTarget; b.disabled = true; b.textContent = "Enviando…";
+          sb.functions.invoke("sincronizar-olist", { method: "POST", body: { acao: "importar", olist_id: t.olist_id, canal: sel.value } }).then(function (res) {
+            var falha = res.error ? (res.error.context && typeof res.error.context.json === "function" ? res.error.context.json() : Promise.resolve({ error: res.error.message })) : Promise.resolve(res.data || {});
+            return falha;
+          }).then(function (d) {
+            if (!d || d.error) { b.disabled = false; b.textContent = "Mandar para a fila"; toast("Não foi possível: " + ((d && d.error) || "erro"), "err"); return; }
+            toast("Pedido " + d.id_externo + (d.ja_existia ? " já estava no WMS" : " foi para a fila ✓"), "ok");
+            carregarRevisar(); carregarFilaPedidos(); carregarContadores();
+          });
+        });
+        row.querySelector('[data-a="ignorar"]').addEventListener("click", function (ev) {
+          var b = ev.currentTarget;
+          if (b.dataset.conf !== "1") { b.dataset.conf = "1"; b.textContent = "Confirmar ignorar"; return; }
+          b.disabled = true;
+          sb.from("sync_triagem").update({ status: "ignorado_admin", decidido_por: meu.id, decidido_em: new Date().toISOString() }).eq("olist_id", t.olist_id).then(function (res) {
+            if (res.error) { b.disabled = false; toast("Não foi possível: " + res.error.message, "err"); return; }
+            toast("Pedido ignorado: não entra no WMS.", "ok");
+            carregarRevisar();
+          });
+        });
+        el.appendChild(row);
+      });
+      document.getElementById("ignoradosLista").innerHTML = ign.map(function (t) {
+        return '<div class="rev-ign"><b>' + escapeHtml(t.numero_ecommerce || t.numero) + '</b> · ' + escapeHtml(t.cliente || "") + '<br><span class="pn-obs">' + escapeHtml(t.motivo) + '</span></div>';
+      }).join("");
+    });
 }
 
 var syncAutoBtn = document.getElementById("syncAutoBtn");
@@ -171,6 +242,8 @@ if (btnSyncOlist) {
       linhas.push(d.ja_existentes + " já existiam");
       if (d.paginas > 1) linhas.push(d.paginas + " páginas lidas no Olist");
       if (d.sem_itens_reconhecidos) linhas.push(d.sem_itens_reconhecidos + " sem item válido");
+      if (d.a_revisar_novos) linhas.push(d.a_revisar_novos + " foram para \"A revisar\"");
+      if (d.vendas_balcao || d.ignorados_por_regra) linhas.push(((d.vendas_balcao || 0) + (d.ignorados_por_regra || 0)) + " ficaram fora (balcão, retirada ou Full)");
       if (d.cancelados_no_wms && d.cancelados_no_wms.length) linhas.push("cancelados no WMS (cancelados no Olist): " + d.cancelados_no_wms.join(", "));
       if (d.avisos && d.avisos.length) linhas.push(d.avisos.join(" · "));
       if (d.erros && d.erros.length) linhas.push("erros: " + d.erros.join(" · "));
@@ -185,6 +258,7 @@ if (btnSyncOlist) {
 
 function carregarFilaPedidos() {
   carregarStatusSync();
+  carregarRevisar();
   sb.from("pedidos").select("id,id_externo,canal,status,itens_pedido(qtd)").eq("status", "a_separar").order("criado_em", { ascending: false }).then(function (res) {
     var el = document.getElementById("listaPedidos");
     el.innerHTML = "";

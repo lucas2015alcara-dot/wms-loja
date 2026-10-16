@@ -84,6 +84,21 @@
         <div class="sync-ultima" id="syncUltima"></div>
         <button class="btn primary" id="btnSyncOlist" style="width:100%">Sincronizar agora</button>
         <div id="syncOlistResultado" style="margin-top:10px; font-size:13px; color:var(--text-dim)"></div>
+        <details class="sync-regras">
+          <summary>O que entra e o que fica fora</summary>
+          <div id="syncRegrasTexto" class="pn-obs"></div>
+        </details>
+      </div>
+          <div class="card" id="cardRevisar" style="display:none">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+          <h2 style="margin:0">A revisar <span id="revisarQtd" class="ret-cont"></span></h2>
+        </div>
+        <p class="pn-obs" style="margin:6px 0 4px">Pedidos do Olist que a sincronização não soube classificar. Eles <b>não</b> entram na fila até você decidir.</p>
+        <div id="revisarLista"></div>
+        <details class="sync-regras" id="ignoradosBox">
+          <summary>Ficaram fora pelas regras <span id="ignoradosQtd"></span></summary>
+          <div id="ignoradosLista"></div>
+        </details>
       </div>
           <div class="card">
         <h2>Novo pedido</h2>

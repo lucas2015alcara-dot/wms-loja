@@ -597,3 +597,14 @@
 .sync-ultima { font-size: 13px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.4; }
 .sync-ultima.erro { color: var(--red); }
 .sync-ultima.rodando { color: var(--accent-ink); }
+.sync-regras { margin-top: 12px; font-size: 13px; }
+.sync-regras summary { cursor: pointer; color: var(--text-dim); font-weight: 600; }
+.sync-regras .pn-obs { margin-top: 6px; line-height: 1.5; }
+.rev-item { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.rev-item:last-child { border-bottom: none; }
+.rev-tx { flex: 1 1 220px; min-width: 0; }
+.rev-tx .meta { font-size: 13px; color: var(--text-dim); }
+.rev-motivo { font-size: 12.5px; color: var(--accent-ink); margin-top: 3px; }
+.rev-acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rev-acoes .usr-select { width: auto; padding: 8px 10px; font-size: 14px; }
+.rev-ign { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
