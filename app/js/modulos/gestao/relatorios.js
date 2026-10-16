@@ -4,7 +4,7 @@
 
 // ---------------- RELATÓRIOS ----------------
 var repWired = false;
-var repDataPedidos = null, repDataProdutividade = null, repDataEstoque = null, repDataContagens = null;
+var repDataPedidos = null, repDataProdutividade = null, repDataEstoque = null, repDataContagens = null, repDataProblemas = null;
 
 function carregarRelatorios() {
   if (!repWired) {
@@ -18,6 +18,7 @@ function carregarRelatorios() {
     document.getElementById("repExpProdutividade").addEventListener("click", function () { exportarCSV("produtividade_equipe.csv", repDataProdutividade); });
     document.getElementById("repExpEstoque").addEventListener("click", function () { exportarCSV("estoque_por_endereco.csv", repDataEstoque); });
     document.getElementById("repExpContagens").addEventListener("click", function () { exportarCSV("historico_contagens.csv", repDataContagens); });
+    document.getElementById("repExpProblemas").addEventListener("click", function () { exportarCSV("problemas_no_periodo.csv", repDataProblemas); });
   }
   rodarRelatorios();
 }
@@ -32,6 +33,7 @@ function periodoISO() {
 }
 
 function rodarRelatorios() {
+  relatorioProblemas();
   relatorioPedidos();
   relatorioProdutividade();
   relatorioEstoque();
@@ -138,6 +140,82 @@ function relatorioContagens() {
         el.appendChild(row);
       });
     });
+}
+
+// ---------- Problemas no período (ocorrências) ----------
+function duracaoTxt(min) {
+  if (min < 60) return Math.round(min) + " min";
+  var h = Math.floor(min / 60);
+  return h < 24 ? h + " h " + Math.round(min % 60) + " min" : Math.floor(h / 24) + " d " + (h % 24) + " h";
+}
+function repContar(lista, chaveFn) {
+  var m = {};
+  lista.forEach(function (o) { var k = chaveFn(o); if (k) m[k] = (m[k] || 0) + 1; });
+  return Object.keys(m).map(function (k) { return [k, m[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+}
+function repBarras(titulo, pares, rotFn, max) {
+  if (!pares.length) return "";
+  var topo = pares[0][1] || 1;
+  return '<div class="rp-bloco"><h3>' + titulo + '</h3>' + pares.slice(0, max || 8).map(function (p) {
+    var rot = rotFn ? rotFn(p[0]) : p[0];
+    return '<div class="rp-linha"><span class="rp-rot" title="' + escapeHtml(rot) + '">' + escapeHtml(rot) + '</span><span class="rp-n">' + p[1] + '</span>' +
+      '<span class="rp-barra"><i style="width:' + Math.max(4, Math.round(p[1] / topo * 100)) + '%"></i></span></div>';
+  }).join("") + '</div>';
+}
+function relatorioProblemas() {
+  var card = document.getElementById("repProblemasCard");
+  if (!meu || meu.papel !== "admin") { if (card) card.style.display = "none"; return; }
+  card.style.display = "";
+  var p = periodoISO();
+  var el = document.getElementById("repProblemas");
+  el.innerHTML = '<div class="empty">Carregando...</div>';
+  var nomes = {};
+  sb.from("perfis").select("id,nome").then(function (rp) {
+    (rp.data || []).forEach(function (u) { nomes[u.id] = u.nome; });
+    return sb.from("ocorrencias")
+      .select("id,etapa,motivo,detalhe,qtd_afetada,status,aberta_por,aberta_em,solucao,solucao_detalhe,solucao_dados,resolvida_por,resolvida_em,item_id,pedidos(id_externo,canal),itens_pedido(produtos(sku,nome)),enderecos(codigo)")
+      .gte("aberta_em", new Date(p.de).toISOString()).lte("aberta_em", new Date(p.ate).toISOString())
+      .order("aberta_em", { ascending: false }).limit(2000);
+  }).then(function (res) {
+    if (res.error) { el.innerHTML = '<div class="empty">Erro: ' + escapeHtml(res.error.message) + '</div>'; return; }
+    var lista = res.data || [];
+    var skuDe = function (o) {
+      if (o.itens_pedido && o.itens_pedido.produtos) return o.itens_pedido.produtos.sku;
+      return (o.solucao_dados && o.solucao_dados.sku_removido) || "";
+    };
+    var nomeDe = function (id) { return nomes[id] || (id ? "—" : ""); };
+    var fmt = function (iso) { return iso ? new Date(iso).toLocaleString("pt-BR") : ""; };
+    repDataProblemas = {
+      headers: ["aberta_em", "pedido", "canal", "etapa", "motivo", "sku", "endereco", "qtd", "detalhe", "reportado_por", "status", "solucao", "solucao_detalhe", "resolvida_em", "resolvida_por", "minutos_ate_resolver"],
+      rows: lista.map(function (o) {
+        var min = o.resolvida_em ? Math.round((new Date(o.resolvida_em) - new Date(o.aberta_em)) / 60000) : "";
+        return [fmt(o.aberta_em), o.pedidos ? o.pedidos.id_externo : "", o.pedidos ? canalLabel(o.pedidos.canal) : "", ETAPA_NOME[o.etapa] || o.etapa,
+          rotuloOc(o.motivo), skuDe(o), o.enderecos ? o.enderecos.codigo : "", o.qtd_afetada || "", o.detalhe || "", nomeDe(o.aberta_por),
+          o.status === "resolvida" ? "Resolvido" : (o.status === "aguardando" ? "Aguardando reposição" : "Em aberto"),
+          o.solucao ? rotuloOc(o.solucao) : "", o.solucao_detalhe || "", fmt(o.resolvida_em), nomeDe(o.resolvida_por), min];
+      })
+    };
+    if (!lista.length) { el.innerHTML = '<div class="empty">Nenhum problema reportado nesse período. 👏</div>'; return; }
+    var resolvidas = lista.filter(function (o) { return o.status === "resolvida" && o.resolvida_em; });
+    var abertas = lista.filter(function (o) { return o.status === "aberta"; }).length;
+    var aguard = lista.filter(function (o) { return o.status === "aguardando"; }).length;
+    var media = resolvidas.length ? resolvidas.reduce(function (s, o) { return s + (new Date(o.resolvida_em) - new Date(o.aberta_em)) / 60000; }, 0) / resolvidas.length : null;
+    var estoqueCorrigido = lista.filter(function (o) { return o.solucao_dados && o.solucao_dados.estoque_antes !== undefined; }).length;
+    var num = function (n, l) { return '<div class="counter"><div class="n mono">' + n + '</div><div class="l">' + l + '</div></div>'; };
+    el.innerHTML =
+      '<div class="rp-numeros">' + num(lista.length, "Reportados") + num(abertas, "Em aberto") + num(aguard, "Aguardando reposição") +
+      num(resolvidas.length, "Resolvidos") + num(media === null ? "—" : duracaoTxt(media), "Tempo médio p/ resolver") + '</div>' +
+      (estoqueCorrigido ? '<div class="scan-hint" style="margin-top:8px">' + estoqueCorrigido + ' correção(ões) de estoque feitas ao resolver (aparecem também no histórico de contagens).</div>' : '') +
+      '<div class="rp-grade">' +
+      repBarras("Por motivo", repContar(lista, function (o) { return o.motivo; }), rotuloOc) +
+      repBarras("Por etapa", repContar(lista, function (o) { return o.etapa; }), function (k) { return ETAPA_NOME[k] || k; }) +
+      repBarras("SKUs com mais problemas", repContar(lista, skuDe), function (k) { return "SKU " + k; }) +
+      repBarras("Endereços com mais problemas", repContar(lista, function (o) { return o.enderecos ? o.enderecos.codigo : ""; })) +
+      repBarras("Soluções usadas", repContar(resolvidas, function (o) { return o.solucao; }), rotuloOc) +
+      repBarras("Quem reportou", repContar(lista, function (o) { return o.aberta_por; }), nomeDe) +
+      repBarras("Por canal", repContar(lista, function (o) { return o.pedidos ? o.pedidos.canal : ""; }), canalLabel) +
+      '</div>';
+  });
 }
 
 function exportarCSV(nomeArquivo, dados) {

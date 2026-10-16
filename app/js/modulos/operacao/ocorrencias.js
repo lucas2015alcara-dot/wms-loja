@@ -39,7 +39,10 @@ function erroOc(e) {
     apenas_admin: "Só um admin pode fazer isso.",
     sku_nao_cadastrado: "Esse SKU não está cadastrado no WMS.",
     informe_autorizacao: "Informe como o cliente autorizou.",
-    quantidade_invalida: "Quantidade inválida: tem que ser menor que a do pedido e pelo menos 1.",
+    ocorrencia_remover_item: "Tirar o item inteiro ainda não está ligado neste ambiente. Por enquanto, deixe pelo menos 1 unidade.",
+    unico_item: "Esse é o único item do pedido: nesse caso, cancele o pedido.",
+    sem_endereco_para_corrigir: "Não dá para corrigir o estoque: o reporte não registrou o endereço. Desmarque a correção ou ajuste pelo inventário.",
+    quantidade_invalida: "Quantidade inválida: tem que ser menor que a do pedido (0 tira o item inteiro).",
     item_invalido: "Escolha o item.",
     login_invalido: "Esse login não está ativo.",
     pedido_encerrado: "Esse pedido já foi cancelado ou expedido.",
@@ -99,7 +102,9 @@ document.getElementById("ocConfirmar").addEventListener("click", function () {
   var b = document.getElementById("ocConfirmar");
   b.disabled = true;
   var ctx = ocCtx;
-  sb.rpc("abrir_ocorrencia", { p_pedido_id: ctx.pedido.id, p_etapa: ctx.etapa, p_motivo: ctx.motivo, p_item_id: ctx.item ? ctx.item.id : null, p_detalhe: detalhe || null, p_qtd: qtd > 0 ? qtd : null }).then(function (r) {
+  // endereço bipado na hora (só na separação): ajuda o admin a corrigir o estoque e entra no relatório
+  var endId = (ctx.etapa === "separacao" && typeof sepEnderecoAtivo !== "undefined" && sepEnderecoAtivo) ? sepEnderecoAtivo.id : null;
+  sb.rpc("abrir_ocorrencia2", { p_pedido_id: ctx.pedido.id, p_etapa: ctx.etapa, p_motivo: ctx.motivo, p_item_id: ctx.item ? ctx.item.id : null, p_detalhe: detalhe || null, p_qtd: qtd > 0 ? qtd : null, p_endereco_id: endId }).then(function (r) {
     b.disabled = false;
     if (r.error) { err.textContent = erroOc(r.error); return; }
     fecharReporte();
@@ -129,7 +134,7 @@ function carregarProblemas() {
   var desde = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   carregarPerfisAtivos().then(function () {
     return sb.from("ocorrencias")
-      .select("id,pedido_id,item_id,etapa,motivo,detalhe,qtd_afetada,progresso,status,aberta_por,aberta_em,solucao,solucao_detalhe,solucao_dados,resolvida_por,resolvida_em,devolvida_para,pedidos(id,id_externo,canal,status,itens_pedido(id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))),itens_pedido(produtos(sku,nome))")
+      .select("id,pedido_id,item_id,endereco_id,enderecos(codigo),etapa,motivo,detalhe,qtd_afetada,progresso,status,aberta_por,aberta_em,solucao,solucao_detalhe,solucao_dados,resolvida_por,resolvida_em,devolvida_para,pedidos(id,id_externo,canal,status,itens_pedido(id,qtd,qtd_separada,qtd_embalada,produtos(sku,nome))),itens_pedido(produtos(sku,nome))")
       .or("status.neq.resolvida,resolvida_em.gte." + desde)
       .order("aberta_em", { ascending: true }).limit(200);
   }).then(function (r) {
@@ -174,6 +179,7 @@ function preencherProb(elId, lista, vazio) {
       '<span class="prob-tempo">' + tempoOc(o.aberta_em) + '</span></div>' +
       '<div class="prob-motivo">' + escapeHtml(rotuloOc(o.motivo)) + (o.qtd_afetada ? ' · ' + o.qtd_afetada + ' un.' : '') + '</div>' +
       (item ? '<div class="prob-item mono">' + skuTxt(item.sku) + ' — ' + escapeHtml(item.nome) + '</div>' : '') +
+      (o.enderecos ? '<div class="prob-end">📍 ' + escapeHtml(o.enderecos.codigo) + '</div>' : '') +
       (o.detalhe ? '<div class="prob-det">“' + escapeHtml(o.detalhe) + '”</div>' : '') +
       '<div class="prob-quem">Reportado por ' + escapeHtml(nomePerfil(o.aberta_por)) + ' · ' + new Date(o.aberta_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + '</div>' +
       (o.status === "aguardando" ? '<div class="prob-det">Aguardando reposição' + (o.solucao_dados && o.solucao_dados.previsao ? ' · previsão ' + new Date(o.solucao_dados.previsao + "T12:00").toLocaleDateString("pt-BR") : '') + (o.solucao_detalhe ? ' · ' + escapeHtml(o.solucao_detalhe) : '') + '</div>' : '') +
@@ -188,7 +194,9 @@ function cartaoResolvida(o) {
   return '<div class="prob-res"><b>' + escapeHtml(p.id_externo || "?") + '</b> · ' + escapeHtml(rotuloOc(o.motivo)) +
     '<br><span class="pn-obs">→ ' + escapeHtml(rotuloOc(o.solucao)) + (o.solucao_detalhe ? ': ' + escapeHtml(o.solucao_detalhe) : '') +
     (o.resolvida_em ? ' · ' + new Date(o.resolvida_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : '') +
-    (o.resolvida_por ? ' · ' + escapeHtml(nomePerfil(o.resolvida_por)) : '') + '</span></div>';
+    (o.resolvida_por ? ' · ' + escapeHtml(nomePerfil(o.resolvida_por)) : '') +
+    (o.solucao_dados && o.solucao_dados.estoque_antes !== undefined ? '<br>Estoque de ' + escapeHtml(o.solucao_dados.endereco_corrigido || "") + ' corrigido: ' + o.solucao_dados.estoque_antes + ' → ' + o.solucao_dados.estoque_depois : '') +
+    (o.solucao_dados && o.solucao_dados.sku_removido ? '<br>SKU ' + escapeHtml(o.solucao_dados.sku_removido) + ' saiu do pedido' : '') + '</span></div>';
 }
 
 // ---------- resolver ----------
@@ -229,18 +237,31 @@ function atualizarCamposResolver() {
   var o = resAtual;
   var c = document.getElementById("resCampos");
   var html = "";
-  if (s === "encontrado_outro_endereco") html = '<label for="resEndereco">Em qual endereço?</label><input type="text" id="resEndereco" maxlength="60" autocomplete="off" placeholder="Ex.: Rua 02 - PP1 - B3">';
+  if (s === "encontrado_outro_endereco") {
+    html = '<label for="resEndereco">Em qual endereço?</label><input type="text" id="resEndereco" maxlength="60" autocomplete="off" placeholder="Ex.: Rua 02 - PP1 - B3">';
+    if (o && o.endereco_id && o.item_id && o.enderecos) {
+      html += '<label class="res-corrigir"><input type="checkbox" id="resCorrigir"' + (o.motivo === "nao_encontrado" ? " checked" : "") + '><span>Corrigir o estoque de <b>' + escapeHtml(o.enderecos.codigo) + '</b> (onde não estava)</span></label>' +
+        '<div id="resRealWrap"><label for="resReal">Quantas unidades tem de verdade lá?</label><input type="number" id="resReal" min="0" step="1" value="0"></div>' +
+        '<div class="sub">Fica registrado no histórico de contagens, como uma contagem de inventário.</div>';
+    }
+  }
   else if (s === "sku_substituto") html = '<label for="resItem">Qual item será trocado?</label><select id="resItem" class="usr-select">' + opcoesItens(o) + '</select>' +
     '<label for="resSku">SKU que vai no lugar</label><input type="text" id="resSku" class="mono" maxlength="40" autocomplete="off" placeholder="bipe ou digite">' + campoVia() +
     '<div class="sub">O pedido volta para a <b>separação</b> para pegar o produto novo.</div>';
   else if (s === "envio_parcial") html = '<label for="resItem">Qual item vai a menos?</label><select id="resItem" class="usr-select">' + opcoesItens(o) + '</select>' +
-    '<label for="resQtdEnviar">Quantas unidades vão</label><input type="number" id="resQtdEnviar" min="1" step="1">' + campoVia();
+    '<label for="resQtdEnviar">Quantas unidades vão (0 = tirar o item do pedido)</label><input type="number" id="resQtdEnviar" min="0" step="1">' + campoVia() +
+    '<div class="sub">Se já foi separado mais do que vai, o aviso pede para devolver a sobra ao endereço.</div>';
   else if (s === "trocar_unidade") html = '<label for="resOnde">Onde está a unidade boa?</label><input type="text" id="resOnde" maxlength="80" autocomplete="off">';
   else if (s === "aguardar_reposicao") html = '<label for="resPrev">Previsão de chegada</label><input type="date" id="resPrev" class="usr-select">' +
     '<div class="sub">O pedido continua fora da fila. Quando o produto chegar, abra de novo e escolha a solução.</div>';
   else if (s === "refazer_embalagem" && o && o.pedidos && o.pedidos.status === "embalado") html = '<div class="sub">O pedido volta para a <b>embalagem</b> para conferir de novo.</div>';
   else if (s === "cancelar_pedido") html = '<div class="sub">Abre o cancelamento (com motivo e sua senha). Ao cancelar, o problema é encerrado sozinho.</div>';
   c.innerHTML = html;
+  var cb = document.getElementById("resCorrigir");
+  if (cb) {
+    var ajusta = function () { document.getElementById("resRealWrap").style.display = cb.checked ? "" : "none"; };
+    cb.addEventListener("change", ajusta); ajusta();
+  }
   document.getElementById("resDetalheRot").textContent = s === "outro" ? "O que foi feito? (obrigatório)" : "Observação (opcional)";
   document.getElementById("resDevolverWrap").style.display = (s === "aguardar_reposicao" || s === "cancelar_pedido") ? "none" : "";
   document.getElementById("resConfirmar").textContent = s === "cancelar_pedido" ? "Abrir cancelamento" : (s === "aguardar_reposicao" ? "Deixar aguardando" : "Resolver e devolver à fila");
@@ -259,7 +280,15 @@ document.getElementById("resConfirmar").addEventListener("click", function () {
   var detalhe = val("resDetalhe");
   if (s === "outro" && detalhe.length < 3) { err.textContent = "Escreva o que foi feito."; return; }
   var dados = {};
-  if (s === "encontrado_outro_endereco") dados = { endereco: val("resEndereco") };
+  if (s === "encontrado_outro_endereco") {
+    dados = { endereco: val("resEndereco") };
+    var cbx = document.getElementById("resCorrigir");
+    if (cbx && cbx.checked) {
+      var real = parseInt(val("resReal") || "0", 10);
+      if (!(real >= 0)) { err.textContent = "Informe quantas unidades tem no endereço (0 se não tem nenhuma)."; return; }
+      dados.corrigir_estoque = true; dados.qtd_real = real;
+    }
+  }
   if (s === "sku_substituto") {
     dados = { item_id: val("resItem"), sku_novo: val("resSku"), autorizado_via: val("resVia"), contato_por: val("resContato") };
     if (!dados.sku_novo) { err.textContent = "Informe o SKU que vai no lugar."; return; }
@@ -267,7 +296,7 @@ document.getElementById("resConfirmar").addEventListener("click", function () {
   }
   if (s === "envio_parcial") {
     dados = { item_id: val("resItem"), qtd_enviar: parseInt(val("resQtdEnviar"), 10), autorizado_via: val("resVia"), contato_por: val("resContato") };
-    if (!(dados.qtd_enviar >= 1)) { err.textContent = "Informe quantas unidades vão."; return; }
+    if (!(dados.qtd_enviar >= 0)) { err.textContent = "Informe quantas unidades vão (0 tira o item)."; return; }
     if (!dados.autorizado_via) { err.textContent = "Informe como o cliente autorizou."; return; }
   }
   if (s === "trocar_unidade") dados = { onde: val("resOnde") };
